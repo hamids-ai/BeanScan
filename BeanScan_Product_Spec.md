@@ -268,35 +268,253 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-## Open Questions for Iteration
+## Answered Questions & Decisions
 
 ### Authentication & User Management
-1. **Password Requirements:** What specific password complexity rules? (minimum length, special characters, etc.)
-2. **Email Verification:** Should users verify their email before accessing the app?
-3. **Password Reset:** How should password reset flow work? (email link, security questions, etc.)
-4. **Remember Me:** Should there be a "remember me" option for persistent login?
-5. **Account Deletion:** How should users delete their accounts? What happens to their data?
-6. **Social Login:** Support for OAuth (Google, Apple, etc.) in addition to email/password?
 
-### Coffee Tracking Features
-7. **Image Storage:** Should we store the original bag photo? (Storage implications)
-8. **Editing:** Can users manually add coffee without a photo?
-9. **Search/Filter:** How should users find coffees in their collection? (by roaster, origin, rating, etc.)
-10. **Duplicates:** What happens if user photographs the same bag twice?
-11. **Export:** Should users be able to export their data (CSV, JSON)?
-12. **Social Features:** Any sharing capabilities? (Future consideration)
+#### 1. Password Requirements
+**Decision:**
+- Minimum 8 characters
+- At least one uppercase letter, one lowercase letter, one number
+- Special characters encouraged but optional
 
-### Technical & API
-13. **API Rate Limits:** How to handle Perplexity API rate limits? Cache results? Daily limits?
-14. **Data Accuracy Feedback:** Should users be able to flag incorrect auto-populated data to improve system?
-15. **Partial Data UX:** How much manual entry is acceptable? If 5/8 fields fail, should we still proceed?
-16. **Perplexity Query Optimization:** What's the best query format to get highest accuracy from Perplexity?
-17. **Cost Management:** Budget for Perplexity API + Web Search API calls per coffee?
-18. **Body Profile Description:** Should the short description be auto-generated or user-editable?
-19. **Brew Log Reminders:** Should users get notifications to update their brew log after adding a coffee?
-20. **Grind Setting Range:** What's the acceptable range for grind settings? (e.g., 0.0 - 100.0)?
+**Rationale:** Balanced security without being overly burdensome for a personal app.
+
+#### 2. Email Verification
+**Decision:** Yes, require email verification before users can add coffees to their collection.
+- Allow limited app exploration without verification
+- Users must verify email to unlock full functionality
+
+**Rationale:** Enables secure password reset flow, prevents fake accounts, ensures valid contact method.
+
+#### 3. Password Reset
+**Decision:** Email-based reset flow with time-limited tokens.
+- Send password reset link to verified email
+- Token expires after 24 hours
+- Single-use token only
+- No security questions (less secure than tokens)
+
+**Rationale:** Industry standard approach, secure, user-friendly.
+
+#### 4. Remember Me
+**Decision:** Yes, offer "Remember Me" checkbox on login screen.
+- Checked: Session extends to 30 days
+- Unchecked: Session ends when browser closes
+
+**Rationale:** Convenience for personal device usage while maintaining security option.
+
+#### 5. Account Deletion
+**Decision:** Self-service account deletion with safeguards.
+- "Delete Account" option in settings
+- Require password confirmation before deletion
+- Offer data export before confirming deletion
+- 30-day grace period with soft delete (allow reactivation)
+- Permanent deletion after grace period
+
+**Rationale:** User data ownership, prevent accidental deletion, allow recovery window.
+
+#### 6. Social Login
+**Decision:** Not in MVP. Consider for Phase 2.
+- Phase 1: Email/password authentication only
+- Phase 2 consideration: Google Sign-In and Apple Sign-In
+- If added, allow linking multiple auth methods to same account
+
+**Rationale:** Reduces friction but adds technical complexity. Email/password authentication is sufficient for MVP while we validate product-market fit.
 
 ---
 
-**Version:** 1.2
+### Coffee Tracking Features
+
+#### 7. Image Storage
+**Decision:** Yes, store original bag photos.
+- Compress/optimize images to max 1MB per photo
+- Display as thumbnail in collection view
+- Full-size image on detail view
+- Store in cloud storage (S3, Firebase Storage, etc.)
+
+**Rationale:** Visual reference is valuable for memory, nostalgia, and quick identification. Storage costs are manageable with compression.
+
+#### 8. Manual Coffee Entry
+**Decision:** Yes, support manual entry without photo.
+- Add "Add Manually" button alongside "Take Photo" option
+- All fields become manual input (no OCR/API lookup)
+- Optional: Allow uploading photo from gallery
+
+**Rationale:** Flexibility for edge cases: gifted beans without bags, bulk beans, repackaged beans, beans from cafes, or users who prefer manual entry.
+
+#### 9. Search/Filter
+**Decision:** Implement comprehensive search and filter system.
+
+**Search by:**
+- Roaster name
+- Bag name
+- Origin/country
+- Tasting notes (user-entered)
+
+**Filter by:**
+- Roast level (Light, Medium-Light, Medium, Medium-Dark, Dark)
+- Rating (Great, Good, Neutral, Meh, Bad)
+- Processing method (Washed, Natural, Honey, etc.)
+- Origin/country
+
+**Sort by:**
+- Date added (newest/oldest)
+- Rating (highest/lowest)
+- Roaster name (alphabetical)
+
+**Rationale:** Essential feature once users have 10-15+ coffees. Enables discovery and comparison.
+
+#### 10. Duplicate Detection
+**Decision:** Warn user but allow duplicates.
+- Detect duplicates by matching: Roaster Name + Bag Name (case-insensitive)
+- Show warning modal: "You may have already added this coffee. Would you like to view the existing entry?"
+- Options: "View Existing" or "Add Anyway"
+- Allow duplicate: User might legitimately buy the same coffee multiple times
+
+**Rationale:** Helpful warning prevents accidental duplicates, but doesn't block legitimate re-purchases.
+
+#### 11. Data Export
+**Decision:** Yes, provide data export functionality.
+- "Export My Data" button in settings
+- Export formats: CSV and JSON
+- Include all data: coffee profiles, brew logs, dates, ratings
+- Exclude: Images (too large for simple export, but provide download links in JSON)
+
+**Rationale:** User data ownership, data portability, backup capability, good privacy practice.
+
+#### 12. Social Features
+**Decision:** Not in MVP. Potential Phase 3 feature.
+
+**Potential future features:**
+- Share individual coffee cards (as image or link)
+- Follow other users
+- Discover popular coffees in community
+- Compare tasting notes with others
+- Public/private profile toggle
+
+**Rationale:** Focus on core personal tracking experience first. Validate product-market fit before adding social complexity.
+
+---
+
+### Technical & API
+
+#### 13. API Rate Limits
+**Decision:** Implement caching and user limits.
+
+**Strategy:**
+- Cache Perplexity API results by roaster name + bag name combination
+- Cache duration: 90 days (coffee specs rarely change)
+- Daily user limit: 20 new coffees per day (prevents abuse)
+- If user hits limit: Skip API calls, show manual entry form with helpful message
+- If API returns rate limit error: Fall back to manual entry gracefully
+
+**Rationale:** Cost control while accommodating legitimate use. Most home baristas won't add 20 coffees in a day.
+
+#### 14. Data Accuracy Feedback
+**Decision:** Yes, implement feedback mechanism.
+
+**Phase 1:**
+- "Report Inaccurate Data" button on coffee detail page
+- Collects: Which field is wrong, user's correction (optional)
+- Logs reports for admin review
+- Admin can invalidate cache entry to trigger re-lookup
+
+**Phase 2:**
+- Analyze feedback patterns to improve Perplexity queries
+- Use feedback to fine-tune data extraction logic
+- Potentially surface corrections to other users (community-driven accuracy)
+
+**Rationale:** Continuous improvement, builds trust with users, leverages community knowledge.
+
+#### 15. Partial Data UX
+**Decision:** Allow saving with partial data, with clear UX indicators.
+
+**Rules:**
+- Minimum required: Bag Name, Roaster Name, + at least 1 additional field
+- If only 2/8 fields: Prompt user "Would you like to add more details manually?"
+- Show what was auto-populated vs. what needs manual entry
+- Highlight missing fields in yellow with "Unknown" placeholder
+- Allow saving incomplete records (users can update later)
+- Display completeness indicator (e.g., "6/8 fields completed")
+
+**Rationale:** Flexibility is key. Better to have partial data than force users to abandon entry. Users can research and update later.
+
+#### 16. Perplexity Query Optimization
+**Decision:** Start with structured query, iterate based on results.
+
+**Initial Query Format:**
+```
+[Roaster Name] [Bag Name] coffee bean specifications: origin country, roast level, varietal, altitude, processing method, flavor notes, body profile
+```
+
+**Request Format:**
+- Ask for structured response or JSON format if possible
+- Include current year or "recent" to prioritize fresh results
+
+**Iteration Plan:**
+- Track success rate per field in analytics
+- A/B test query variations
+- Adjust based on which fields have lowest auto-population rates
+
+**Rationale:** Requires experimentation with real-world data to optimize. Start with comprehensive query and refine.
+
+#### 17. Cost Management
+**Decision:** Budget and monitor closely during beta.
+
+**Cost Estimates:**
+- Perplexity API: ~$0.02-0.05 per query
+- Web Search fallback: ~$0.01 per search
+- Total per coffee: ~$0.10 maximum (including retries)
+
+**Strategy:**
+- Set monthly budget cap based on projected user base
+- Monitor costs per user in beta phase
+- Implement caching aggressively (90-day cache)
+- Consider tiered pricing: Free tier (X coffees/month), Premium tier (unlimited)
+
+**Rationale:** Need real-world usage data to optimize costs. Caching reduces repeat queries significantly.
+
+#### 18. Body Profile Description
+**Decision:** Auto-generated with user edit capability.
+
+**Behavior:**
+- Primary: Auto-generated from Perplexity API or web search
+- User can click "Edit" button to modify description
+- If edited, show "(edited)" indicator
+- Save both original and edited versions (for future ML training)
+
+**Rationale:** Best of both worlds—convenience of automation with flexibility to correct or personalize.
+
+#### 19. Brew Log Reminders
+**Decision:** Optional feature, default OFF.
+
+**Implementation:**
+- Settings toggle: "Brew Log Reminders" (default: OFF)
+- If enabled: Send one gentle reminder 1 week after adding coffee
+- Reminder text: "How did [Coffee Name] taste? Add your brew notes."
+- Frequency cap: Maximum one notification per week across all coffees
+- Easy opt-out: "Don't remind me about this coffee" option
+
+**Rationale:** Some users appreciate prompts, others find notifications annoying. Make it opt-in to respect user preferences.
+
+#### 20. Grind Setting Range
+**Decision:** No hard limits, flexible validation.
+
+**Validation Rules:**
+- Must be positive number with exactly one decimal place
+- Format: `^\d+\.\d$` (e.g., 4.0, 15.5, 100.0)
+- Acceptable range: 0.1 to 999.9 (effectively no upper limit)
+
+**Why No Hard Limits:**
+- Hand grinders (e.g., Comandante, 1Zpresso): typically 0.0-30.0
+- Baratza Encore: 1-40
+- Commercial grinders: Can go to 100+
+- Different grinders use vastly different scales
+
+**Rationale:** Grinders have no universal scale. Flexibility accommodates all grinder types. Users track settings for their specific grinder.
+
+---
+
+**Version:** 2.0
 **Last Updated:** January 8, 2026
+**Changelog:** Answered all 20 open questions with detailed decisions and rationale
