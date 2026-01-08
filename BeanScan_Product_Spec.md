@@ -61,7 +61,31 @@ The following information is extracted/determined from the bag photo:
 - **Altitude:** Numeric value with 'm' suffix (e.g., "1600m", "1400-1800m")
 - **Body Profile:** Category (Light/Medium/Full) + descriptive text (e.g., "Medium - Smooth with balanced mouthfeel")
 
-### 3. Brew Log (User Input)
+### 3. User Authentication & Multi-User Support
+BeanScan supports multiple users with individual accounts and separate coffee collections:
+
+**User Registration:**
+- Required fields:
+  - Name (full name or display name)
+  - Email (must be valid email format)
+  - Password (secure password requirements)
+- Each user gets a unique account
+- Email must be unique across all users
+
+**User Login:**
+- Required credentials:
+  - Email
+  - Password
+- Session management for authenticated users
+- Secure password validation
+
+**Data Isolation:**
+- Each user has their own private coffee collection
+- Coffee records are associated with the user who created them
+- Users can only view and edit their own coffee data
+- No data sharing between users (unless future social features are added)
+
+### 4. Brew Log (User Input)
 For each coffee bag, there is ONE brew log that can be edited and updated at any time:
 
 | Field | Type | Input Method | Required | Notes |
@@ -89,15 +113,23 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ### First-Time User Journey
 1. **Welcome Screen** → Brief intro to BeanScan
-2. **Add First Coffee** → Prompt to take photo of bag
-3. **Photo Capture** → Camera interface
-4. **OCR Processing** → Extract Bag Name and Roaster Name (loading state)
-5. **Data Lookup** → Perplexity API retrieves coffee metadata (loading indicator)
-6. **Fallback Processing** (if needed) → Web Search fills missing fields
-7. **Review & Edit** → Pre-filled coffee profile with any missing fields highlighted for manual entry
-8. **Save Coffee** → Coffee added to collection
-9. **Add/Edit Brew Log** (Optional) → Add initial brew notes
-10. **View Collection** → See saved coffees
+2. **User Registration** → Enter name, email, and password
+3. **Account Created** → Confirmation message and automatic login
+4. **Add First Coffee** → Prompt to take photo of bag
+5. **Photo Capture** → Camera interface
+6. **OCR Processing** → Extract Bag Name and Roaster Name (loading state)
+7. **Data Lookup** → Perplexity API retrieves coffee metadata (loading indicator)
+8. **Fallback Processing** (if needed) → Web Search fills missing fields
+9. **Review & Edit** → Pre-filled coffee profile with any missing fields highlighted for manual entry
+10. **Save Coffee** → Coffee added to collection
+11. **Add/Edit Brew Log** (Optional) → Add initial brew notes
+12. **View Collection** → See saved coffees
+
+### Returning User Journey
+1. **Welcome Screen** → Show login option
+2. **User Login** → Enter email and password
+3. **Authentication** → Validate credentials
+4. **View Collection** → Access personal coffee collection
 
 ### Adding a New Coffee
 1. Tap "Add Coffee" button
@@ -126,10 +158,23 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ## Data Model
 
+### User Record
+```
+{
+  id: unique_id,
+  name: string,
+  email: string, // unique, used for login
+  password: string, // hashed and salted
+  dateCreated: timestamp,
+  lastLogin: timestamp
+}
+```
+
 ### Coffee Bean Record
 ```
 {
   id: unique_id,
+  userId: string, // foreign key to User.id
   bagName: string,
   roasterName: string,
   roasterLocation: string, // City, State, Country
@@ -156,11 +201,24 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 }
 ```
 
-**Note:** The `brewLog` object is embedded directly in the coffee record. It can be null/empty if the user hasn't added brew information yet.
+**Notes:**
+- The `brewLog` object is embedded directly in the coffee record. It can be null/empty if the user hasn't added brew information yet.
+- Each coffee record is associated with a user via the `userId` field. Users can only access their own coffee records.
 
 ---
 
 ## Technical Considerations
+
+### User Authentication & Security
+- **Password Storage:** Passwords must be hashed and salted (use bcrypt or similar)
+- **Session Management:** JWT tokens or session cookies for authenticated users
+- **Email Validation:** Validate email format and uniqueness during registration
+- **Password Requirements:** Minimum length, complexity requirements (to be defined)
+- **Security Best Practices:**
+  - HTTPS required for all authentication endpoints
+  - Protection against common attacks (SQL injection, XSS, CSRF)
+  - Rate limiting on login attempts to prevent brute force
+  - Secure password reset flow (future consideration)
 
 ### Image Recognition Approach
 - **OCR Processing:** Extract only Bag Name and Roaster Name from photo
@@ -189,38 +247,56 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
    - Validate: Format/structure of user input
 
 ### Data Storage
-- **Option 1:** Browser localStorage (simple, works offline, data stays local)
-- **Option 2:** Cloud database (sync across devices, backup)
-- **Option 3:** Hybrid (local-first with optional cloud sync)
+**Multi-user support requires cloud-based storage:**
+- **Required:** Cloud database to support user authentication and data isolation
+- **Database options:**
+  - PostgreSQL or MySQL for relational data (users, coffee records with foreign keys)
+  - MongoDB for document-based storage
+  - Firebase or Supabase for rapid development with built-in auth
+- **Data access control:** Query filters to ensure users only access their own coffee records
+- **Optional enhancement:** Local caching for offline access (sync when online)
 
 ### Tech Stack Recommendation
 - **Frontend:** React (with artifact support for rapid prototyping)
+- **Backend:** Node.js/Express, Python/FastAPI, or serverless functions
+- **Authentication:** JWT tokens or session-based auth
+- **Database:** PostgreSQL, MongoDB, Firebase, or Supabase (includes auth)
 - **OCR Processing:** Tesseract.js or Claude API for Bag Name + Roaster Name
 - **Primary Data Source:** Perplexity API
 - **Fallback Data Source:** Web Search API (Google Custom Search, Bing, or SerpAPI)
-- **Storage:** Start with localStorage, add cloud sync later
 - **Camera:** Browser MediaDevices API
 
 ---
 
 ## Open Questions for Iteration
 
-1. **Image Storage:** Should we store the original bag photo? (Storage implications)
-2. **Editing:** Can users manually add coffee without a photo?
-3. **Search/Filter:** How should users find coffees in their collection? (by roaster, origin, rating, etc.)
-4. **Duplicates:** What happens if user photographs the same bag twice?
-5. **Export:** Should users be able to export their data (CSV, JSON)?
-6. **Social Features:** Any sharing capabilities? (Future consideration)
-7. **API Rate Limits:** How to handle Perplexity API rate limits? Cache results? Daily limits?
-8. **Data Accuracy Feedback:** Should users be able to flag incorrect auto-populated data to improve system?
-9. **Partial Data UX:** How much manual entry is acceptable? If 5/8 fields fail, should we still proceed?
-10. **Perplexity Query Optimization:** What's the best query format to get highest accuracy from Perplexity?
-11. **Cost Management:** Budget for Perplexity API + Web Search API calls per coffee?
-12. **Body Profile Description:** Should the short description be auto-generated or user-editable?
-13. **Brew Log Reminders:** Should users get notifications to update their brew log after adding a coffee?
-14. **Grind Setting Range:** What's the acceptable range for grind settings? (e.g., 0.0 - 100.0)?
+### Authentication & User Management
+1. **Password Requirements:** What specific password complexity rules? (minimum length, special characters, etc.)
+2. **Email Verification:** Should users verify their email before accessing the app?
+3. **Password Reset:** How should password reset flow work? (email link, security questions, etc.)
+4. **Remember Me:** Should there be a "remember me" option for persistent login?
+5. **Account Deletion:** How should users delete their accounts? What happens to their data?
+6. **Social Login:** Support for OAuth (Google, Apple, etc.) in addition to email/password?
+
+### Coffee Tracking Features
+7. **Image Storage:** Should we store the original bag photo? (Storage implications)
+8. **Editing:** Can users manually add coffee without a photo?
+9. **Search/Filter:** How should users find coffees in their collection? (by roaster, origin, rating, etc.)
+10. **Duplicates:** What happens if user photographs the same bag twice?
+11. **Export:** Should users be able to export their data (CSV, JSON)?
+12. **Social Features:** Any sharing capabilities? (Future consideration)
+
+### Technical & API
+13. **API Rate Limits:** How to handle Perplexity API rate limits? Cache results? Daily limits?
+14. **Data Accuracy Feedback:** Should users be able to flag incorrect auto-populated data to improve system?
+15. **Partial Data UX:** How much manual entry is acceptable? If 5/8 fields fail, should we still proceed?
+16. **Perplexity Query Optimization:** What's the best query format to get highest accuracy from Perplexity?
+17. **Cost Management:** Budget for Perplexity API + Web Search API calls per coffee?
+18. **Body Profile Description:** Should the short description be auto-generated or user-editable?
+19. **Brew Log Reminders:** Should users get notifications to update their brew log after adding a coffee?
+20. **Grind Setting Range:** What's the acceptable range for grind settings? (e.g., 0.0 - 100.0)?
 
 ---
 
-**Version:** 1.1
+**Version:** 1.2
 **Last Updated:** January 8, 2026
