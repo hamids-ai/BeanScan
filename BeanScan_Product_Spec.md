@@ -217,8 +217,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - **Security Best Practices:**
   - HTTPS required for all authentication endpoints
   - Protection against common attacks (SQL injection, XSS, CSRF)
-  - Rate limiting on login attempts to prevent brute force
-  - Secure password reset flow (future consideration)
+  - Rate limiting on login attempts to prevent brute force. Maximum of 5 attempts for a 1 minute session.
 
 ### Image Recognition Approach
 - **OCR Processing:** Extract only Bag Name and Roaster Name from photo
@@ -254,10 +253,9 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
   - MongoDB for document-based storage
   - Firebase or Supabase for rapid development with built-in auth
 - **Data access control:** Query filters to ensure users only access their own coffee records
-- **Optional enhancement:** Local caching for offline access (sync when online)
 
 ### Tech Stack Recommendation
-- **Frontend:** React (with artifact support for rapid prototyping)
+- **Frontend:** React (with artifact support for rapid prototyping, and the ability for responsive design on Mobile and Desktop)
 - **Backend:** Node.js/Express, Python/FastAPI, or serverless functions
 - **Authentication:** JWT tokens or session-based auth
 - **Database:** PostgreSQL, MongoDB, Firebase, or Supabase (includes auth)
@@ -281,45 +279,21 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 **Rationale:** Balanced security without being overly burdensome for a personal app.
 
 #### 2. Email Verification
-**Decision:** Yes, require email verification before users can add coffees to their collection.
-- Allow limited app exploration without verification
-- Users must verify email to unlock full functionality
-
-**Rationale:** Enables secure password reset flow, prevents fake accounts, ensures valid contact method.
+**Decision:** Not in MVP. Consider for Phase 2.
 
 #### 3. Password Reset
-**Decision:** Email-based reset flow with time-limited tokens.
-- Send password reset link to verified email
-- Token expires after 24 hours
-- Single-use token only
-- No security questions (less secure than tokens)
-
-**Rationale:** Industry standard approach, secure, user-friendly.
+**Decision:** Not in MVP. Consider for Phase 2.
 
 #### 4. Remember Me
-**Decision:** Yes, offer "Remember Me" checkbox on login screen.
-- Checked: Session extends to 30 days
-- Unchecked: Session ends when browser closes
-
-**Rationale:** Convenience for personal device usage while maintaining security option.
+**Decision:** Not in MVP. Consider for Phase 2.
 
 #### 5. Account Deletion
-**Decision:** Self-service account deletion with safeguards.
-- "Delete Account" option in settings
-- Require password confirmation before deletion
-- Offer data export before confirming deletion
-- 30-day grace period with soft delete (allow reactivation)
-- Permanent deletion after grace period
-
-**Rationale:** User data ownership, prevent accidental deletion, allow recovery window.
+**Decision:** Not in MVP. Consider for Phase 2.
 
 #### 6. Social Login
 **Decision:** Not in MVP. Consider for Phase 2.
 - Phase 1: Email/password authentication only
-- Phase 2 consideration: Google Sign-In and Apple Sign-In
-- If added, allow linking multiple auth methods to same account
 
-**Rationale:** Reduces friction but adds technical complexity. Email/password authentication is sufficient for MVP while we validate product-market fit.
 
 ---
 
@@ -374,25 +348,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 **Rationale:** Helpful warning prevents accidental duplicates, but doesn't block legitimate re-purchases.
 
 #### 11. Data Export
-**Decision:** Yes, provide data export functionality.
-- "Export My Data" button in settings
-- Export formats: CSV and JSON
-- Include all data: coffee profiles, brew logs, dates, ratings
-- Exclude: Images (too large for simple export, but provide download links in JSON)
-
-**Rationale:** User data ownership, data portability, backup capability, good privacy practice.
+**Decision:** Not in MVP. Potential Phase 3 feature.
 
 #### 12. Social Features
 **Decision:** Not in MVP. Potential Phase 3 feature.
-
-**Potential future features:**
-- Share individual coffee cards (as image or link)
-- Follow other users
-- Discover popular coffees in community
-- Compare tasting notes with others
-- Public/private profile toggle
-
-**Rationale:** Focus on core personal tracking experience first. Validate product-market fit before adding social complexity.
 
 ---
 
@@ -411,20 +370,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 **Rationale:** Cost control while accommodating legitimate use. Most home baristas won't add 20 coffees in a day.
 
 #### 14. Data Accuracy Feedback
-**Decision:** Yes, implement feedback mechanism.
-
-**Phase 1:**
-- "Report Inaccurate Data" button on coffee detail page
-- Collects: Which field is wrong, user's correction (optional)
-- Logs reports for admin review
-- Admin can invalidate cache entry to trigger re-lookup
-
-**Phase 2:**
-- Analyze feedback patterns to improve Perplexity queries
-- Use feedback to fine-tune data extraction logic
-- Potentially surface corrections to other users (community-driven accuracy)
-
-**Rationale:** Continuous improvement, builds trust with users, leverages community knowledge.
+**Decision:** Not for MVP. Potential Phase 2 feature.
 
 #### 15. Partial Data UX
 **Decision:** Allow saving with partial data, with clear UX indicators.
@@ -451,12 +397,6 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - Ask for structured response or JSON format if possible
 - Include current year or "recent" to prioritize fresh results
 
-**Iteration Plan:**
-- Track success rate per field in analytics
-- A/B test query variations
-- Adjust based on which fields have lowest auto-population rates
-
-**Rationale:** Requires experimentation with real-world data to optimize. Start with comprehensive query and refine.
 
 #### 17. Cost Management
 **Decision:** Budget and monitor closely during beta.
