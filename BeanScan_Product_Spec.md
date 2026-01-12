@@ -254,15 +254,78 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
   - Firebase or Supabase for rapid development with built-in auth
 - **Data access control:** Query filters to ensure users only access their own coffee records
 
-### Tech Stack Recommendation
-- **Frontend:** React (with artifact support for rapid prototyping, and the ability for responsive design on Mobile and Desktop)
-- **Backend:** Node.js/Express, Python/FastAPI, or serverless functions
-- **Authentication:** JWT tokens or session-based auth
-- **Database:** PostgreSQL, MongoDB, Firebase, or Supabase (includes auth)
-- **OCR Processing:** Tesseract.js or Claude API for Bag Name + Roaster Name
-- **Primary Data Source:** Perplexity API
-- **Fallback Data Source:** Web Search API (Google Custom Search, Bing, or SerpAPI)
-- **Camera:** Browser MediaDevices API
+### Tech Stack
+
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| **Frontend** | React | Responsive design for mobile and desktop |
+| **Backend** | TypeScript | Type-safe server-side development |
+| **Authentication** | JWT tokens | Session-based auth with secure token management |
+| **Database** | PostgreSQL, Firebase, or Supabase | Cloud-based with built-in auth options |
+| **OCR Processing** | Tesseract.js or Claude API | For Bag Name + Roaster Name extraction |
+| **Primary Data Source** | Perplexity API | Intelligent coffee metadata lookup |
+| **Fallback Data Source** | Web Search API | Google Custom Search, Bing, or SerpAPI |
+| **Camera** | Browser MediaDevices API | Native camera access for photo capture |
+
+---
+
+## Development Milestones
+
+### Milestone 1: Design Wireframes
+**Focus:** Establish the foundational design and architecture of the application.
+
+**Deliverables:**
+- User flow diagrams for all core journeys (registration, login, add coffee, brew log)
+- Navigation structure and hierarchy
+- Information architecture defining data organization and relationships
+- Content strategy outlining text, labels, and messaging
+- Low-fidelity wireframes for all screens
+- Interaction patterns and state transitions
+
+**Exit Criteria:**
+- All user flows documented and approved
+- Wireframes cover 100% of defined features
+- Navigation and IA validated against user stories
+
+---
+
+### Milestone 2: Visual User Interface
+**Focus:** Develop the complete visual design and interactive UI components.
+
+**Deliverables:**
+- Design system (colors, typography, spacing, components)
+- High-fidelity mockups for all screens
+- Interactive prototype demonstrating key user flows
+- Responsive designs for mobile and desktop viewports
+- UI component library in React
+- Accessibility compliance (WCAG 2.1 AA)
+
+**Exit Criteria:**
+- All screens designed and reviewed
+- Prototype tested with sample users
+- Component library implemented and documented
+
+---
+
+### Milestone 3: Backend & API Integration
+**Focus:** Build the server infrastructure and integrate all data lookup services.
+
+**Deliverables:**
+- TypeScript backend server setup
+- User authentication system (registration, login, session management)
+- Database schema and migrations
+- OCR integration (Tesseract.js or Claude API)
+- Perplexity API integration for coffee metadata lookup
+- Web Search API fallback implementation
+- Image upload and storage pipeline
+- API endpoints for all CRUD operations
+
+**Exit Criteria:**
+- All API endpoints functional and tested
+- OCR successfully extracts bag/roaster names
+- Perplexity API returns structured coffee data
+- Fallback chain (Perplexity → Web Search → Manual) working
+- Authentication flow secure and complete
 
 ---
 
@@ -455,6 +518,8 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-**Version:** 2.0
-**Last Updated:** January 8, 2026
-**Changelog:** Answered all 20 open questions with detailed decisions and rationale
+**Version:** 2.1
+**Last Updated:** January 12, 2026
+**Changelog:**
+- v2.1: Added Tech Stack specification (React frontend, TypeScript backend) and 3 Development Milestones
+- v2.0: Answered all 20 open questions with detailed decisions and rationale
