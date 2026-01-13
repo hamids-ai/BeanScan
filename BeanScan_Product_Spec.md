@@ -17,6 +17,7 @@ BeanScan empowers home baristas to maintain a comprehensive record of every coff
 - Users photograph their coffee bag
 - AI analyzes the image to extract text and identify the coffee
 - System automatically populates coffee metadata
+- **Display Photo:** The app displays a professional product photo from the roaster's website or a legitimate coffee source (retrieved via API lookup), NOT the user's photo. This ensures high-quality, visually appealing images throughout the app.
 
 ### 2. Coffee Bean Profile (Auto-populated)
 The following information is extracted/determined from the bag photo:
@@ -33,6 +34,7 @@ The following information is extracted/determined from the bag photo:
 | Processing Method | e.g., Washed, Natural, Honey, Anaerobic | Perplexity API → Web Search → Manual Entry |
 | Flavor Profile | Tags/Text (e.g., Blueberry, Chocolate, Citrus) | Perplexity API → Web Search → Manual Entry |
 | Body Profile | (Light/Medium/Full) & (Short Description) | Perplexity API → Web Search → Manual Entry |
+| Product Photo | URL to professional image | Perplexity API → Web Search → Placeholder |
 
 **Data Retrieval Process:**
 
@@ -188,7 +190,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
     category: enum, // Light, Medium, Full
     description: string
   },
-  photoUrl: string,
+  photoUrl: string, // URL to professional product photo from roaster (not user photo)
   dateAdded: timestamp,
   brewLog: {
     brewDate: date, // structured date picker
@@ -362,14 +364,21 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ### Coffee Tracking Features
 
-#### 7. Image Storage
-**Decision:** Yes, store original bag photos.
-- Compress/optimize images to max 1MB per photo
-- Display as thumbnail in collection view
-- Full-size image on detail view
-- Store in cloud storage (S3, Firebase Storage, etc.)
+#### 7. Image Storage & Display
+**Decision:** User photos are for OCR processing only; display uses professional images.
 
-**Rationale:** Visual reference is valuable for memory, nostalgia, and quick identification. Storage costs are manageable with compression.
+**User-Taken Photos:**
+- Used solely for OCR text extraction (bag name, roaster name)
+- Not stored long-term after processing
+- Processed and discarded to minimize storage costs
+
+**Display Photos:**
+- Fetch professional product photo from roaster's website during API lookup
+- Store URL reference to professional image
+- Display professional photo in collection view and detail view
+- Fallback: Display placeholder image if no professional photo found
+
+**Rationale:** Professional photos ensure consistent, high-quality visual presentation throughout the app. User photos often have poor lighting, angles, or quality that would detract from the user experience.
 
 #### 8. Manual Coffee Entry
 **Decision:** Yes, support manual entry without photo.
@@ -518,8 +527,9 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-**Version:** 2.1
-**Last Updated:** January 12, 2026
+**Version:** 2.2
+**Last Updated:** January 13, 2026
 **Changelog:**
+- v2.2: Updated image display requirement - use professional roaster photos instead of user-taken photos
 - v2.1: Added Tech Stack specification (React frontend, TypeScript backend) and 3 Development Milestones
 - v2.0: Answered all 20 open questions with detailed decisions and rationale
