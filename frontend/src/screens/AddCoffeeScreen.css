@@ -1,0 +1,49 @@
+/* Add Coffee Screen Styles */
+
+.add-coffee-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+.add-options {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-4) 0;
+}
+
+.add-option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-6);
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-fast);
+}
+
+.add-option-card:hover {
+  border-color: var(--color-primary-500);
+  background-color: var(--color-bg-elevated);
+}
+
+.add-option-icon {
+  color: var(--color-primary-400);
+  margin-bottom: var(--spacing-3);
+}
+
+.add-option-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.add-tip {
+  padding: var(--spacing-4);
+  text-align: center;
+}
