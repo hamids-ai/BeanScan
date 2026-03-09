@@ -30,3 +30,6 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+
+# Local development notes
+Development_Status.md
