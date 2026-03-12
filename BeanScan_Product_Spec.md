@@ -97,6 +97,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 | Grind Setting | Float | Number Input | **Required** | One decimal point only (e.g., "4.0", "4.1", "15.5") |
 | Rating | Select | Dropdown Menu | Optional | Options: Great / Good / Neutral / Meh / Bad |
 | Tasting Notes | Text | Text Area | Optional | User's personal flavor impressions (free-form text) |
+| Body Notes | Text | Text Area | Optional | User's personal notes on mouthfeel and body |
 | Last Updated | Timestamp | Auto-generated | N/A | Automatically recorded when brew log is saved |
 
 **Input Validation:**
@@ -300,11 +301,9 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - Interactive prototype demonstrating key user flows
 - Responsive designs for mobile and desktop viewports
 - UI component library in React
-- Accessibility compliance (WCAG 2.1 AA)
 
 **Exit Criteria:**
 - All screens designed and reviewed
-- Prototype tested with sample users
 - Component library implemented and documented
 
 ---
@@ -389,35 +388,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 **Rationale:** Flexibility for edge cases: gifted beans without bags, bulk beans, repackaged beans, beans from cafes, or users who prefer manual entry.
 
 #### 9. Search/Filter
-**Decision:** Implement comprehensive search and filter system.
-
-**Search by:**
-- Roaster name
-- Bag name
-- Origin/country
-- Tasting notes (user-entered)
-
-**Filter by:**
-- Roast level (Light, Medium-Light, Medium, Medium-Dark, Dark)
-- Rating (Great, Good, Neutral, Meh, Bad)
-- Processing method (Washed, Natural, Honey, etc.)
-- Origin/country
-
-**Sort by:**
-- Date added (newest/oldest)
-- Rating (highest/lowest)
-- Roaster name (alphabetical)
-
-**Rationale:** Essential feature once users have 10-15+ coffees. Enables discovery and comparison.
+**Decision:** Future improvement. Not in MVP.
 
 #### 10. Duplicate Detection
-**Decision:** Warn user but allow duplicates.
-- Detect duplicates by matching: Roaster Name + Bag Name (case-insensitive)
-- Show warning modal: "You may have already added this coffee. Would you like to view the existing entry?"
-- Options: "View Existing" or "Add Anyway"
-- Allow duplicate: User might legitimately buy the same coffee multiple times
-
-**Rationale:** Helpful warning prevents accidental duplicates, but doesn't block legitimate re-purchases.
+**Decision:** Not in MVP. Future improvement.
 
 #### 11. Data Export
 **Decision:** Not in MVP. Potential Phase 3 feature.
@@ -445,17 +419,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 **Decision:** Not for MVP. Potential Phase 2 feature.
 
 #### 15. Partial Data UX
-**Decision:** Allow saving with partial data, with clear UX indicators.
-
-**Rules:**
-- Minimum required: Bag Name, Roaster Name, + at least 1 additional field
-- If only 2/8 fields: Prompt user "Would you like to add more details manually?"
-- Show what was auto-populated vs. what needs manual entry
-- Highlight missing fields in yellow with "Unknown" placeholder
-- Allow saving incomplete records (users can update later)
-- Display completeness indicator (e.g., "6/8 fields completed")
-
-**Rationale:** Flexibility is key. Better to have partial data than force users to abandon entry. Users can research and update later.
+**Decision:** Allow saving with partial data. Only Bag Name and Roaster Name are required. All other fields are optional and can be left empty or filled in later.
 
 #### 16. Perplexity Query Optimization
 **Decision:** Start with structured query, iterate based on results.
@@ -527,9 +491,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-**Version:** 2.2
-**Last Updated:** January 13, 2026
+**Version:** 2.3
+**Last Updated:** March 11, 2026
 **Changelog:**
+- v2.3: Removed accessibility (WCAG 2.1 AA) requirement and user-testing exit criterion from M2; moved search/filter and duplicate detection to future improvements; simplified partial data UX
 - v2.2: Updated image display requirement - use professional roaster photos instead of user-taken photos
 - v2.1: Added Tech Stack specification (React frontend, TypeScript backend) and 3 Development Milestones
 - v2.0: Answered all 20 open questions with detailed decisions and rationale

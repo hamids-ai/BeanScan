@@ -5,23 +5,28 @@ import { useUser } from '../context/UserContext'
 function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const { login } = useUser()
   const navigate = useNavigate()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // TODO: Implement login logic with backend
-    // For now, extract name from email for demo purposes
-    const name = email.split('@')[0]
-    login({ name, email })
-    navigate('/collection')
+    setError('')
+    setIsSubmitting(true)
+    try {
+      await login(email, password)
+      navigate('/collection')
+    } catch (err) {
+      setError('Incorrect email or password. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
     <div className="screen">
-      <Link to="/" className="back-btn">
-        ← Back
-      </Link>
+      <Link to="/" className="back-btn">← Back</Link>
 
       <div style={{ marginTop: 'var(--spacing-6)', marginBottom: 'var(--spacing-8)' }}>
         <span className="logo">BeanScan</span>
@@ -29,6 +34,12 @@ function LoginScreen() {
 
       <h1 className="screen-title">Welcome Back</h1>
       <p className="screen-subtitle">Sign in to access your coffee collection</p>
+
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 'var(--spacing-4)' }}>
+          <span>{error}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
@@ -57,8 +68,13 @@ function LoginScreen() {
           />
         </div>
 
-        <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: 'var(--spacing-6)' }}>
-          Sign In
+        <button
+          type="submit"
+          className="btn btn-primary btn-block"
+          style={{ marginTop: 'var(--spacing-6)' }}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
 
