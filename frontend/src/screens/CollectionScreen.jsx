@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useUser } from '../context/UserContext'
 import { supabase } from '../lib/supabase'
+import CoffeeThumbnail, { getAccentColor } from '../components/CoffeeThumbnail'
 import './CollectionScreen.css'
 
 function CollectionScreen() {
@@ -68,13 +69,9 @@ function CollectionScreen() {
           ) : (
             <div className="coffee-list">
               {coffees.map((coffee) => (
-                <Link key={coffee.id} to={`/coffee/${coffee.id}`} className="coffee-card">
+                <Link key={coffee.id} to={`/coffee/${coffee.id}`} className="coffee-card" style={{ borderLeftColor: getAccentColor(coffee.name), borderLeftWidth: '3px' }}>
                   <div className="coffee-card-image">
-                    {coffee.imageUrl ? (
-                      <img src={coffee.imageUrl} alt={coffee.name} />
-                    ) : (
-                      <span className="coffee-card-image-placeholder">&#9749;</span>
-                    )}
+                    <CoffeeThumbnail imageUrl={coffee.imageUrl} name={coffee.name} size="sm" />
                   </div>
                   <div className="coffee-card-content">
                     <div className="coffee-card-header">

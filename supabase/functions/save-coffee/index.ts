@@ -3,6 +3,61 @@ import { createClient } from 'npm:@supabase/supabase-js'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void }
+
+// Resolves a product page URL to its og:image, or validates a direct image URL.
+// Streams only the first 50KB of HTML so it's fast even on large pages.
+async function resolveImageUrl(url: string): Promise<string | null> {
+  try {
+    return await Promise.race([
+      doResolve(url),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ])
+  } catch {
+    return null
+  }
+}
+
+async function doResolve(url: string): Promise<string | null> {
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' } })
+  if (!res.ok) return null
+
+  const contentType = res.headers.get('content-type') ?? ''
+  if (contentType.startsWith('image/')) return url
+
+  if (contentType.startsWith('text/html')) {
+    const reader = res.body?.getReader()
+    if (!reader) return null
+    const decoder = new TextDecoder()
+    let html = ''
+    let bytesRead = 0
+    while (bytesRead < 50 * 1024) {
+      const { done, value } = await reader.read()
+      if (done) break
+      html += decoder.decode(value, { stream: true })
+      bytesRead += value.byteLength
+      if (html.includes('</head>')) break
+    }
+    reader.cancel()
+    const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+               ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)
+    const ogImage = match?.[1]
+    if (!ogImage) return null
+    const imgRes = await fetch(ogImage, { method: 'HEAD' })
+    const imgContentType = imgRes.headers.get('content-type') ?? ''
+    return imgRes.ok && imgContentType.startsWith('image/') ? ogImage : null
+  }
+
+  return null
+}
+
+async function resolveAndUpdatePhoto(coffeeId: string, rawUrl: string) {
+  const resolved = await resolveImageUrl(rawUrl)
+  if (!resolved) return
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  await supabase.from('coffees').update({ photo_url: resolved }).eq('id', coffeeId)
+}
+
 const DAILY_LIMIT = 20
 
 const corsHeaders = {
@@ -146,6 +201,11 @@ Deno.serve(async (req) => {
     if (error) {
       console.error('coffee insert error:', error)
       return Response.json({ error: 'save_failed' }, { status: 500, headers: corsHeaders })
+    }
+
+    // Resolve photo URL in the background — doesn't block the response
+    if (photoUrl) {
+      EdgeRuntime.waitUntil(resolveAndUpdatePhoto(data.id, photoUrl))
     }
 
     return Response.json({ id: data.id, dateAdded: data.date_added }, { status: 201, headers: corsHeaders })

@@ -52,6 +52,7 @@ function normalizeResult(raw: Record<string, unknown>) {
   return result
 }
 
+
 async function queryClaude(bagName: string, roasterName: string) {
   const client = new Anthropic({ apiKey: CLAUDE_API_KEY })
 
@@ -71,7 +72,7 @@ async function queryClaude(bagName: string, roasterName: string) {
 - flavorProfile: comma-separated tasting notes
 - bodyCategory: one of light, medium, full
 - bodyDescription: brief description of the body/mouthfeel
-- photoUrl: null
+- photoUrl: URL to the product page for this specific coffee on any of these sources (in order of preference): the roaster's official website, drinktrade.com, beanbox.com, mistobox.com, driftaway.coffee. Return your best guess at the product page URL. Only return null if you have no knowledge of this coffee being sold online.
 
 Respond with only the JSON object, no other text.`,
       },

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import CoffeeThumbnail, { getAccentColor } from '../components/CoffeeThumbnail'
 import './CoffeeDetailScreen.css'
 
 function CoffeeDetailScreen() {
@@ -31,6 +32,20 @@ function CoffeeDetailScreen() {
   const getRatingClass = (rating) => `rating rating-${rating}`
   const getRatingLabel = (rating) => rating.charAt(0).toUpperCase() + rating.slice(1)
 
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const handleClearImage = async () => {
+    await supabase.from('coffees').update({ photo_url: null }).eq('id', id)
+    setCoffee(prev => ({ ...prev, imageUrl: null }))
+  }
+
+  const handleDelete = async () => {
+    setIsDeleting(true)
+    await supabase.from('coffees').delete().eq('id', id)
+    navigate('/collection')
+  }
+
   if (isLoading) {
     return (
       <div className="screen coffee-detail-screen" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -57,13 +72,14 @@ function CoffeeDetailScreen() {
         <Link to={`/brew-log/${id}`} className="btn btn-ghost btn-sm">Edit</Link>
       </div>
 
-      <div className="detail-image">
-        {coffee.imageUrl ? (
-          <img src={coffee.imageUrl} alt={coffee.name} />
-        ) : (
-          <span className="detail-image-placeholder">&#9749;</span>
-        )}
+      <div className="detail-image" style={{ boxShadow: `0 0 28px ${getAccentColor(coffee.name)}50, 0 0 60px ${getAccentColor(coffee.name)}20` }}>
+        <CoffeeThumbnail imageUrl={coffee.imageUrl} name={coffee.name} size="lg" />
       </div>
+      {coffee.imageUrl && (
+        <button className="wrong-image-btn" onClick={handleClearImage}>
+          Wrong image?
+        </button>
+      )}
 
       <div className="detail-title-section">
         <h1 className="detail-title">{coffee.name}</h1>
@@ -214,6 +230,26 @@ function CoffeeDetailScreen() {
       </div>
 
       <p className="detail-added-date">Added to collection: {coffee.dateAdded}</p>
+
+      <div className="delete-section">
+        {confirmDelete ? (
+          <div className="delete-confirm">
+            <p className="delete-confirm-text">Delete this coffee from your collection?</p>
+            <div className="delete-confirm-actions">
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)} disabled={isDeleting}>
+                Cancel
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={isDeleting}>
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="btn btn-ghost btn-sm delete-btn" onClick={() => setConfirmDelete(true)}>
+            Delete Coffee
+          </button>
+        )}
+      </div>
     </div>
   )
 }

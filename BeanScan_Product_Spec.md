@@ -227,6 +227,26 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - **Recommended Library:** Tesseract.js or Claude API vision capabilities for text extraction
 - **Output:** Two text fields (Bag Name, Roaster Name)
 
+### Coffee Bag Thumbnail Images
+**Lookup (backend — `lookup-coffee` edge function):**
+- Claude is asked to return a `photoUrl` pointing to a professional coffee bag image, checked in priority order:
+  1. Roaster's official website
+  2. drinktrade.com
+  3. beanbox.com
+  4. mistobox.com
+  5. driftaway.coffee
+- The URL is validated via HTTP HEAD request: must return HTTP 200 and a `Content-Type: image/*` header
+- If validation fails or Claude returns null, `photo_url` is stored as null in the database
+
+**Placeholder (frontend):**
+- When `photo_url` is null, render a generic coffee bag graphic (bundled SVG/PNG, no external image)
+- Overlay the first 2 letters of the bag name (uppercase) centered on the graphic
+- Implemented as a shared `<CoffeeThumbnail>` component reused across screens
+
+**Usage:**
+- Collection screen: 72×72px thumbnail on each coffee card
+- Coffee Detail screen: larger prominent image, same `photo_url` value
+
 ### Coffee Data Retrieval Strategy
 **Three-Tier Approach:**
 
@@ -371,13 +391,27 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - Not stored long-term after processing
 - Processed and discarded to minimize storage costs
 
-**Display Photos:**
-- Fetch professional product photo from roaster's website during API lookup
-- Store URL reference to professional image
-- Display professional photo in collection view and detail view
-- Fallback: Display placeholder image if no professional photo found
+**Display Photos — Source Requirements:**
+- Only use professional product photos sourced from the roaster's official website or a reputable coffee retail site (drinktrade.com, beanbox.com, mistobox.com, driftaway.coffee)
+- The photo must show a coffee bag only — no lifestyle shots, cups, brewing equipment, or people
+- URL must be validated at lookup time (HTTP HEAD request confirming a 200 response and `image/*` content type) before being stored
+- If no valid image is found, store null and display the placeholder (see below)
 
-**Rationale:** Professional photos ensure consistent, high-quality visual presentation throughout the app. User photos often have poor lighting, angles, or quality that would detract from the user experience.
+**Placeholder — No Image Found:**
+- Display a gradient placeholder derived deterministically from the coffee bag name (same name always produces the same colors)
+- Gradient style varies across four types: diagonal linear, radial burst, 3-stop linear, radial ellipse — making each coffee visually distinct
+- Colors are drawn from the app's design token palette (primary teal, indigo, violet, amber, emerald, blue, orange)
+- Overlay the first 2 letters of the bag name (e.g., "Sa" for "Sample Roast"), uppercase, with a contrasting palette color
+- Placeholder is used consistently in both the Collection screen and the Coffee Detail screen
+- Each coffee card in the Collection screen also has a colored left border accent drawn from the same palette color as its placeholder
+- The Coffee Detail screen shows a colored glow around the image container using the same accent color
+
+**Display Dimensions:**
+- Collection screen thumbnail: 72×72px square, cropped to fill
+- Coffee Detail screen: larger format (full-width or prominent image area), same aspect ratio
+- Both views use the same `photo_url` value — no separate image stored per context
+
+**Rationale:** Professional photos ensure consistent, high-quality visual presentation throughout the app. User photos often have poor lighting, angles, or quality that would detract from the user experience. Restricting to coffee-bag-only images maintains visual consistency across the collection.
 
 #### 8. Manual Coffee Entry
 **Decision:** Yes, support manual entry without photo.
@@ -387,7 +421,19 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 **Rationale:** Flexibility for edge cases: gifted beans without bags, bulk beans, repackaged beans, beans from cafes, or users who prefer manual entry.
 
-#### 9. Search/Filter
+#### 9. Delete Coffee
+**Decision:** Supported in MVP. Accessible from the Coffee Detail screen only — not from the Collection screen.
+
+**Behavior:**
+- A "Delete Coffee" button is shown at the bottom of the Coffee Detail screen
+- Tapping it shows an inline confirmation ("Delete this coffee from your collection?") with Cancel and Yes, Delete buttons
+- On confirmation, the coffee record is permanently deleted from the database
+- User is navigated back to the Collection screen after deletion
+- The button is intentionally de-emphasized (small, muted color) to prevent accidental taps
+
+**Rationale:** Delete is a destructive action and should require intentional navigation to the detail screen plus an explicit confirmation step. Keeping it off the Collection screen prevents accidental mass deletions.
+
+#### 10. Search/Filter
 **Decision:** Future improvement. Not in MVP.
 
 #### 10. Duplicate Detection
@@ -491,9 +537,11 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-**Version:** 2.3
-**Last Updated:** March 11, 2026
+**Version:** 2.5
+**Last Updated:** March 17, 2026
 **Changelog:**
+- v2.5: Updated placeholder spec to gradient-based design (palette colors, 4 gradient styles, accent border on collection cards, glow on detail screen); added Delete Coffee requirement (detail screen only, inline confirmation)
+- v2.4: Expanded image requirements — source rules (roaster website or drinktrade.com, coffee bag only), URL validation, placeholder spec (generic bag graphic + 2-letter initials), display dimensions for collection and detail screens; added Coffee Bag Thumbnail Images technical section
 - v2.3: Removed accessibility (WCAG 2.1 AA) requirement and user-testing exit criterion from M2; moved search/filter and duplicate detection to future improvements; simplified partial data UX
 - v2.2: Updated image display requirement - use professional roaster photos instead of user-taken photos
 - v2.1: Added Tech Stack specification (React frontend, TypeScript backend) and 3 Development Milestones

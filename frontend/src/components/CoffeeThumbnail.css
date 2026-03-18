@@ -1,0 +1,49 @@
+.coffee-thumbnail-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Gradient placeholder */
+.coffee-thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  /* background is set inline via JS */
+}
+
+/* Subtle diagonal stripe texture for depth */
+.coffee-thumbnail-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    rgba(255, 255, 255, 0.04) 6px,
+    rgba(255, 255, 255, 0.04) 7px
+  );
+  pointer-events: none;
+}
+
+.coffee-thumbnail-initials {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  /* color is set inline via JS */
+}
+
+.coffee-thumbnail-placeholder-sm .coffee-thumbnail-initials {
+  font-size: 1.25rem;
+}
+
+.coffee-thumbnail-placeholder-lg .coffee-thumbnail-initials {
+  font-size: 3rem;
+}

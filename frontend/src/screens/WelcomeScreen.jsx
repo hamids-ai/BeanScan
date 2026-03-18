@@ -1,12 +1,25 @@
 import { Link } from 'react-router-dom'
+import heroImage from '../assets/hero.png'
 
 function WelcomeScreen() {
   return (
     <div className="screen" style={{ justifyContent: 'center', textAlign: 'center' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ marginBottom: 'var(--spacing-8)' }}>
+        <div style={{ marginBottom: 'var(--spacing-4)' }}>
           <span className="logo" style={{ fontSize: 'var(--font-size-4xl)' }}>BeanScan</span>
         </div>
+
+        <img
+          src={heroImage}
+          alt="BeanScan app on a phone next to a steaming latte"
+          style={{
+            width: '100%',
+            maxWidth: '360px',
+            margin: '0 auto var(--spacing-6)',
+            borderRadius: '16px',
+            display: 'block',
+          }}
+        />
 
         <h1 style={{ marginBottom: 'var(--spacing-3)' }}>Your Personal Coffee Journal</h1>
         <p className="text-secondary" style={{ maxWidth: '320px', margin: '0 auto var(--spacing-8)' }}>
