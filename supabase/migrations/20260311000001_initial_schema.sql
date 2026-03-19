@@ -76,8 +76,9 @@ CREATE POLICY "Users can only access their own counts"
   WITH CHECK (user_id = auth.uid());
 
 -- =============================================
--- LOOKUP CACHE (90-day Perplexity result cache)
--- No user data — no RLS needed
+-- LOOKUP CACHE (90-day coffee lookup result cache)
+-- No user data. RLS is enabled (see migration 20260319000001) with no policies,
+-- so only service_role (Edge Functions) can access it — not anon/authenticated clients.
 -- =============================================
 CREATE TABLE lookup_cache (
   cache_key  text PRIMARY KEY,  -- lower(roaster_name || '|' || bag_name)
