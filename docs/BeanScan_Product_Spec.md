@@ -26,15 +26,15 @@ The following information is extracted/determined from the bag photo:
 |-------|---------------|-------------------|
 | Bag Name | Text | **OCR from bag** |
 | Roaster Name | Text | **OCR from bag** |
-| Roaster Location | City, State, Country | Perplexity API → Web Search → Manual Entry |
-| Origins | Country 1, Country 2, etc. | Perplexity API → Web Search → Manual Entry |
-| Roast Level | Light / Medium-Light / Medium / Medium-Dark / Dark | Perplexity API → Web Search → Manual Entry |
-| Coffee Bean Varietal | e.g., Bourbon, Typica, Caturra | Perplexity API → Web Search → Manual Entry |
-| Altitude | e.g., 1600m | Perplexity API → Web Search → Manual Entry |
-| Processing Method | e.g., Washed, Natural, Honey, Anaerobic | Perplexity API → Web Search → Manual Entry |
-| Flavor Profile | Tags/Text (e.g., Blueberry, Chocolate, Citrus) | Perplexity API → Web Search → Manual Entry |
-| Body Profile | (Light/Medium/Full) & (Short Description) | Perplexity API → Web Search → Manual Entry |
-| Product Photo | URL to professional image | Perplexity API → Web Search → Placeholder |
+| Roaster Location | City, State, Country | Roaster site → Retail sites → AI agent → Manual Entry |
+| Origins | Country 1, Country 2, etc. | Roaster site → Retail sites → AI agent → Manual Entry |
+| Roast Level | Light / Medium-Light / Medium / Medium-Dark / Dark | Roaster site → Retail sites → AI agent → Manual Entry |
+| Coffee Bean Varietal | e.g., Bourbon, Typica, Caturra | Roaster site → Retail sites → AI agent → Manual Entry |
+| Altitude | e.g., 1600m | Roaster site → Retail sites → AI agent → Manual Entry |
+| Processing Method | e.g., Washed, Natural, Honey, Anaerobic | Roaster site → Retail sites → AI agent → Manual Entry |
+| Flavor Profile | Tags/Text (e.g., Blueberry, Chocolate, Citrus) | Roaster site → Retail sites → AI agent → Manual Entry |
+| Body Profile | (Light/Medium/Full) & (Short Description) | Roaster site → Retail sites → AI agent → Manual Entry |
+| Product Photo | URL to professional image | Roaster site → Retail sites → Placeholder |
 
 **Data Retrieval Process:**
 
@@ -42,19 +42,24 @@ The following information is extracted/determined from the bag photo:
 - Extract Bag Name and Roaster Name from photo using OCR
 
 **Step 2: Intelligent Lookup (for all other fields)**
-1. **Primary Method - Perplexity API:**
-   - Query: "[Roaster Name] [Bag Name] coffee specifications"
-   - Parse structured response for all remaining fields
+The lookup runs a three-phase pipeline, each phase filling in fields the previous phase missed:
 
-2. **Fallback Method - Web Search:**
-   - If Perplexity fails or returns incomplete data
-   - Query web search: "[Roaster Name] [Bag Name] coffee"
-   - Parse search results for missing fields
+1. **Phase 1 — Roaster's Website (highest trust):**
+   - Search for and scrape the roaster's own product page
+   - Values found here are never overwritten by later phases
 
-3. **Manual Entry:**
-   - If both automated methods fail for any field
-   - Present user with form to manually enter missing data
-   - Pre-fill any successfully retrieved fields
+2. **Phase 2 — Popular Coffee Retail Sites:**
+   - Check in this order: drinktrade.com → beanbox.com → wholelattelove.com → mistobox.com → coffeereview.com
+   - Each site fills only fields still missing after Phase 1
+
+3. **Phase 3 — AI Agent (obscure roasters only):**
+   - Runs only if fields remain null after Phases 1 and 2
+   - An AI agent searches the broader web to infer missing values
+   - Fields sourced from this phase are marked as "AI inferred" in the UI
+
+4. **Manual Entry:**
+   - If all three phases fail to populate a field, it is left null
+   - User sees the form pre-filled with whatever was found and can fill in any remaining fields manually
 
 **Field-Specific Formats:**
 - **Roaster Location:** City, State/Province, Country (e.g., "Portland, OR, USA" or "Melbourne, VIC, Australia")
@@ -121,9 +126,11 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 4. **Add First Coffee** → Prompt to take photo of bag
 5. **Photo Capture** → Camera interface
 6. **OCR Processing** → Extract Bag Name and Roaster Name (loading state)
-7. **Data Lookup** → Perplexity API retrieves coffee metadata (loading indicator)
-8. **Fallback Processing** (if needed) → Web Search fills missing fields
-9. **Review & Edit** → Pre-filled coffee profile with any missing fields highlighted for manual entry
+7. **Data Lookup** → 3-phase pipeline runs with live progress indicator:
+   - Step 1: "Looking up roaster site..."
+   - Step 2: "Checking popular coffee retail sites..."
+   - Step 3: "Searching the web for more details..." (only if needed)
+8. **Review & Edit** → Pre-filled coffee profile; fields sourced from the AI agent are labeled "AI inferred"; missing fields shown as blank for manual entry
 10. **Save Coffee** → Coffee added to collection
 11. **Add/Edit Brew Log** (Optional) → Add initial brew notes
 12. **View Collection** → See saved coffees
@@ -138,11 +145,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 1. Tap "Add Coffee" button
 2. Take photo of bag
 3. OCR extracts Bag Name + Roaster Name
-4. Perplexity API attempts to fetch all other fields
-5. Web Search fills any gaps (if needed)
-6. Review auto-populated data
-7. Manually enter any missing fields
-8. Save to collection
+4. 3-phase lookup pipeline runs with live progress indicator
+5. Review auto-populated data; "AI inferred" label shown on any fields sourced from Phase 3
+6. Manually enter any remaining null fields if desired
+7. Save to collection
 
 ### Adding or Editing Brew Log
 1. Select coffee from collection
@@ -227,6 +233,31 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - **Recommended Library:** Tesseract.js or Claude API vision capabilities for text extraction
 - **Output:** Two text fields (Bag Name, Roaster Name)
 
+### Lookup Progress Indicator
+During the coffee lookup, the app displays a 3-step visual progress indicator with a live status message that updates as each phase runs:
+
+| Phase | Status Message |
+|---|---|
+| Phase 1 running | "Looking up roaster site..." |
+| Phase 2 running | "Checking popular coffee retail sites..." |
+| Phase 3 running | "Searching the web for more details..." |
+
+- Both the step indicator (showing steps 1–3) and the status text update in real time
+- The indicator remains visible until the lookup completes and the form is populated
+- Phase 3 step only appears if Phase 3 actually runs
+
+### "AI Inferred" Field Annotation
+Any coffee field whose value was sourced from Phase 3 (the AI agent) is annotated with an **"AI inferred"** label in two places:
+
+1. **Inline on the coffee form (CoffeeFormScreen)** — shown before the user saves, so they can review and correct the value if needed
+2. **On the Coffee Detail screen** — shown as a persistent label after the coffee is saved, indicating lower confidence than values sourced directly from the roaster or retail sites
+
+Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treated as reliable.
+
+### Missing Field Display
+- Fields with no value (`null` in the database) are displayed as **"N/A"** throughout the UI
+- This is a display-only rule — the database always stores `null` for missing fields
+
 ### Coffee Bag Thumbnail Images
 **Lookup (backend — `lookup-coffee` edge function):**
 - Claude is asked to return a `photoUrl` pointing to a professional coffee bag image, checked in priority order:
@@ -248,25 +279,27 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - Coffee Detail screen: larger prominent image, same `photo_url` value
 
 ### Coffee Data Retrieval Strategy
-**Three-Tier Approach:**
+**Three-Phase Pipeline** (see Tech_Architecture.md Section 6 for full implementation detail):
 
-1. **Primary: Perplexity API**
-   - Query format: "[Roaster Name] [Bag Name] coffee specifications roast level origin varietal processing"
-   - Advantages: Intelligent parsing, structured responses, current data
-   - Returns: JSON-structured coffee metadata
-   - Success rate target: 70-80%
+1. **Phase 1 — Roaster's Website (highest trust)**
+   - Searches for and scrapes the roaster's own product page
+   - Values found here take precedence over all other sources
+   - `photoUrl` sourced here is always preferred
 
-2. **Fallback: Web Search**
-   - Triggered when: Perplexity fails or returns incomplete data
-   - Query format: "[Roaster Name] [Bag Name] coffee"
-   - Parse: Search snippets and crawl roaster website if available
-   - Success rate target: 15-20% of remaining failures
+2. **Phase 2 — Popular Coffee Retail Sites**
+   - Checks in fixed order: drinktrade.com → beanbox.com → wholelattelove.com → mistobox.com → coffeereview.com
+   - Each site fills only fields still null after Phase 1
+   - `photoUrl` sourced here used only if Phase 1 did not provide one
 
-3. **Final Fallback: Manual Entry**
-   - Triggered when: Both automated methods fail for specific fields
-   - UX: Show form with empty fields or partial data
-   - Allow: User to fill in missing information
-   - Validate: Format/structure of user input
+3. **Phase 3 — AI Agent (obscure roasters only)**
+   - Runs only if fields remain null after Phases 1 and 2
+   - Claude agent searches the broader web iteratively to infer missing values
+   - Fields filled by this phase are tagged as `inferredFields` in the API response
+   - UI displays "AI inferred" label on these fields so users can review and correct
+
+4. **Manual Entry**
+   - Any field still null after all three phases is left blank for the user to fill in
+   - Only Bag Name and Roaster Name are required; all other fields are optional
 
 ### Data Storage
 **Multi-user support requires cloud-based storage:**
@@ -537,9 +570,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ---
 
-**Version:** 2.5
-**Last Updated:** March 17, 2026
+**Version:** 2.6
+**Last Updated:** March 23, 2026
 **Changelog:**
+- v2.6: Replaced Perplexity/web search lookup with 3-phase roaster-first pipeline; added Lookup Progress Indicator requirement (3-step visual + per-phase status messages); added "AI Inferred" field annotation requirement (inline on form and Coffee Detail screen); added Missing Field Display rule (null shown as "N/A" in UI)
 - v2.5: Updated placeholder spec to gradient-based design (palette colors, 4 gradient styles, accent border on collection cards, glow on detail screen); added Delete Coffee requirement (detail screen only, inline confirmation)
 - v2.4: Expanded image requirements — source rules (roaster website or drinktrade.com, coffee bag only), URL validation, placeholder spec (generic bag graphic + 2-letter initials), display dimensions for collection and detail screens; added Coffee Bag Thumbnail Images technical section
 - v2.3: Removed accessibility (WCAG 2.1 AA) requirement and user-testing exit criterion from M2; moved search/filter and duplicate detection to future improvements; simplified partial data UX
