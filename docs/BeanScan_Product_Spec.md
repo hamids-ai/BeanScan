@@ -99,7 +99,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 |-------|------|--------------|----------|-------|
 | Date | Date | Date Picker | Optional | When the coffee was brewed (structured date selection) |
 | Roast Date | Date | Date Picker | Optional | When the beans were roasted (structured date selection) |
-| Grind Setting | Float | Number Input | **Required** | One decimal point only (e.g., "4.0", "4.1", "15.5") |
+| Grind Setting | Float | Number Input | Optional | One decimal point only (e.g., "4.0", "4.1", "15.5") |
 | Rating | Select | Dropdown Menu | Optional | Options: Great / Good / Neutral / Meh / Bad |
 | Tasting Notes | Text | Text Area | Optional | User's personal flavor impressions (free-form text) |
 | Body Notes | Text | Text Area | Optional | User's personal notes on mouthfeel and body |
@@ -109,9 +109,10 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 - **Date & Roast Date:** Must use native date picker UI (no manual text entry)
 - **Grind Setting:**
   - Format: Float with exactly one decimal place (e.g., 4.0, 15.5, 22.3)
-  - Validation: Must match pattern `^\d+\.\d$` (e.g., 4.0, 15.5, 100.0)
-  - Required field - cannot save brew log without this value
+  - Validation: Must match pattern `^\d+\.\d$` if provided (e.g., 4.0, 15.5, 100.0)
+  - Optional — brew log can be saved without it
 - **Rating:** Dropdown with five predefined options only
+- **Grind Setting:** Optional — no required fields in the brew log
 
 **Note:** Users can update any field in the brew log at any time. The "Last Updated" timestamp automatically updates whenever changes are saved.
 
@@ -156,7 +157,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 3. Fill in or update brew details:
    - Select brew date using date picker
    - Select roast date using date picker
-   - Enter grind setting (float with one decimal, required)
+   - Enter grind setting (float with one decimal, optional)
    - Select rating from dropdown menu
    - Add/edit tasting notes
 4. Save brew log
@@ -230,7 +231,7 @@ For each coffee bag, there is ONE brew log that can be edited and updated at any
 
 ### Image Recognition Approach
 - **OCR Processing:** Extract only Bag Name and Roaster Name from photo
-- **Recommended Library:** Tesseract.js or Claude API vision capabilities for text extraction
+- **Library:** Claude API vision capabilities for text extraction
 - **Output:** Two text fields (Bag Name, Roaster Name)
 
 ### Lookup Progress Indicator
@@ -264,8 +265,9 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
   1. Roaster's official website
   2. drinktrade.com
   3. beanbox.com
-  4. mistobox.com
-  5. driftaway.coffee
+  4. wholelattelove.com
+  5. mistobox.com
+  6. coffeereview.com
 - The URL is validated via HTTP HEAD request: must return HTTP 200 and a `Content-Type: image/*` header
 - If validation fails or Claude returns null, `photo_url` is stored as null in the database
 
@@ -318,9 +320,9 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 | **Backend** | TypeScript | Type-safe server-side development |
 | **Authentication** | JWT tokens | Session-based auth with secure token management |
 | **Database** | PostgreSQL, Firebase, or Supabase | Cloud-based with built-in auth options |
-| **OCR Processing** | Tesseract.js or Claude API | For Bag Name + Roaster Name extraction |
-| **Primary Data Source** | Perplexity API | Intelligent coffee metadata lookup |
-| **Fallback Data Source** | Web Search API | Google Custom Search, Bing, or SerpAPI |
+| **OCR Processing** | Claude API (vision) | For Bag Name + Roaster Name extraction |
+| **Primary Data Source** | Brave Search + Claude (3-phase pipeline) | Roaster site → retail sites → AI agent |
+| **Fallback Data Source** | Claude AI agent (Phase 3) | Agentic web search for obscure roasters |
 | **Camera** | Browser MediaDevices API | Native camera access for photo capture |
 
 ---
@@ -368,17 +370,16 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 - TypeScript backend server setup
 - User authentication system (registration, login, session management)
 - Database schema and migrations
-- OCR integration (Tesseract.js or Claude API)
-- Perplexity API integration for coffee metadata lookup
-- Web Search API fallback implementation
+- OCR integration (Claude API vision)
+- 3-phase lookup pipeline (Brave Search + Claude scraper + AI agent fallback)
 - Image upload and storage pipeline
 - API endpoints for all CRUD operations
 
 **Exit Criteria:**
 - All API endpoints functional and tested
 - OCR successfully extracts bag/roaster names
-- Perplexity API returns structured coffee data
-- Fallback chain (Perplexity → Web Search → Manual) working
+- 3-phase lookup pipeline returns structured coffee data
+- Fallback chain (roaster site → retail sites → AI agent → manual) working
 - Authentication flow secure and complete
 
 ---
@@ -425,7 +426,7 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 - Processed and discarded to minimize storage costs
 
 **Display Photos — Source Requirements:**
-- Only use professional product photos sourced from the roaster's official website or a reputable coffee retail site (drinktrade.com, beanbox.com, mistobox.com, driftaway.coffee)
+- Only use professional product photos sourced from the roaster's official website or a reputable coffee retail site (drinktrade.com, beanbox.com, wholelattelove.com, mistobox.com, coffeereview.com)
 - The photo must show a coffee bag only — no lifestyle shots, cups, brewing equipment, or people
 - URL must be validated at lookup time (HTTP HEAD request confirming a 200 response and `image/*` content type) before being stored
 - If no valid image is found, store null and display the placeholder (see below)
@@ -486,7 +487,7 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 **Decision:** Implement caching and user limits.
 
 **Strategy:**
-- Cache Perplexity API results by roaster name + bag name combination
+- Cache lookup results by roaster name + bag name combination
 - Cache duration: 90 days (coffee specs rarely change)
 - Daily user limit: 20 new coffees per day (prevents abuse)
 - If user hits limit: Skip API calls, show manual entry form with helpful message
@@ -500,26 +501,13 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 #### 15. Partial Data UX
 **Decision:** Allow saving with partial data. Only Bag Name and Roaster Name are required. All other fields are optional and can be left empty or filled in later.
 
-#### 16. Perplexity Query Optimization
-**Decision:** Start with structured query, iterate based on results.
-
-**Initial Query Format:**
-```
-[Roaster Name] [Bag Name] coffee bean specifications: origin country, roast level, varietal, altitude, processing method, flavor notes, body profile
-```
-
-**Request Format:**
-- Ask for structured response or JSON format if possible
-- Include current year or "recent" to prioritize fresh results
-
-
 #### 17. Cost Management
 **Decision:** Budget and monitor closely during beta.
 
 **Cost Estimates:**
-- Perplexity API: ~$0.02-0.05 per query
-- Web Search fallback: ~$0.01 per search
-- Total per coffee: ~$0.10 maximum (including retries)
+- Brave Search API: ~$0.01 per search (up to ~10 searches per coffee across all phases)
+- Claude API (Haiku): ~$0.01-0.03 per extraction call
+- Total per coffee: ~$0.10 maximum (including all phases)
 
 **Strategy:**
 - Set monthly budget cap based on projected user base
@@ -533,7 +521,7 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 **Decision:** Auto-generated with user edit capability.
 
 **Behavior:**
-- Primary: Auto-generated from Perplexity API or web search
+- Primary: Auto-generated via the 3-phase lookup pipeline
 - User can click "Edit" button to modify description
 - If edited, show "(edited)" indicator
 - Save both original and edited versions (for future ML training)
@@ -570,9 +558,10 @@ Fields sourced from Phase 1 or Phase 2 receive no annotation — they are treate
 
 ---
 
-**Version:** 2.6
-**Last Updated:** March 23, 2026
+**Version:** 2.7
+**Last Updated:** March 24, 2026
 **Changelog:**
+- v2.7: Corrected photo source list to match Tech Architecture (replaced driftaway.coffee with wholelattelove.com and coffeereview.com); removed stale Perplexity/Tesseract.js references throughout; updated Tech Stack, Milestone 3, and cost estimates to reflect Brave Search + Claude pipeline; removed Decision #16 (Perplexity Query Optimization, now superseded)
 - v2.6: Replaced Perplexity/web search lookup with 3-phase roaster-first pipeline; added Lookup Progress Indicator requirement (3-step visual + per-phase status messages); added "AI Inferred" field annotation requirement (inline on form and Coffee Detail screen); added Missing Field Display rule (null shown as "N/A" in UI)
 - v2.5: Updated placeholder spec to gradient-based design (palette colors, 4 gradient styles, accent border on collection cards, glow on detail screen); added Delete Coffee requirement (detail screen only, inline confirmation)
 - v2.4: Expanded image requirements — source rules (roaster website or drinktrade.com, coffee bag only), URL validation, placeholder spec (generic bag graphic + 2-letter initials), display dimensions for collection and detail screens; added Coffee Bag Thumbnail Images technical section

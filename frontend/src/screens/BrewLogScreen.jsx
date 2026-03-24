@@ -127,13 +127,11 @@ function BrewLogScreen() {
         </div>
 
         <div className="form-group">
-          <label className="form-label" htmlFor="grindSetting">
-            Grind Setting <span className="required">*</span>
-          </label>
+          <label className="form-label" htmlFor="grindSetting">Grind Setting</label>
           <input id="grindSetting" name="grindSetting" type="number" step="0.1" min="0.1" max="999.9"
             className="form-input" value={formData.grindSetting} onChange={handleChange}
-            placeholder="e.g., 15.5" required />
-          <p className="form-hint">Required. One decimal place (e.g., 4.0, 15.5)</p>
+            placeholder="e.g., 15.5" />
+          <p className="form-hint">One decimal place (e.g., 4.0, 15.5)</p>
         </div>
 
         <div className="form-group">

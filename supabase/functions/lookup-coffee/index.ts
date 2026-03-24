@@ -17,11 +17,23 @@ const ROAST_LEVELS = ['light', 'medium-light', 'medium', 'medium-dark', 'dark']
 const PROCESSING_METHODS = ['washed', 'natural', 'honey', 'anaerobic']
 const BODY_CATEGORIES = ['light', 'medium', 'full']
 
-// All fields tracked for quality comparison (excludes altitude — rarely available anywhere)
-const QUALITY_FIELDS = ['roasterLocation', 'origins', 'roastLevel', 'processingMethod', 'flavorProfile', 'varietal', 'bodyCategory', 'bodyDescription', 'photoUrl']
+const QUALITY_FIELDS = [
+  'roasterLocation', 'origins', 'roastLevel', 'processingMethod',
+  'flavorProfile', 'varietal', 'altitude', 'bodyCategory', 'bodyDescription', 'photoUrl',
+]
 
-function normalizeResult(raw: Record<string, unknown>) {
-  const result: Record<string, string | null> = {
+const RETAIL_SITES = [
+  'drinktrade.com',
+  'beanbox.com',
+  'wholelattelove.com',
+  'mistobox.com',
+  'coffeereview.com',
+]
+
+type CoffeeFields = Record<string, string | null>
+
+function emptyFields(): CoffeeFields {
+  return {
     roasterLocation: null,
     origins: null,
     roastLevel: null,
@@ -33,6 +45,10 @@ function normalizeResult(raw: Record<string, unknown>) {
     bodyDescription: null,
     photoUrl: null,
   }
+}
+
+function normalizeResult(raw: Record<string, unknown>): CoffeeFields {
+  const result = emptyFields()
 
   for (const [key, value] of Object.entries(raw)) {
     if (key in result && typeof value === 'string' && value.trim()) {
@@ -41,8 +57,8 @@ function normalizeResult(raw: Record<string, unknown>) {
   }
 
   if (result.roastLevel) {
-    const lower = result.roastLevel.toLowerCase().replace(/\s+/g, '-')
-    result.roastLevel = ROAST_LEVELS.find(r => lower.includes(r.replace('-', ''))) ?? null
+    const normalized = result.roastLevel.toLowerCase().replace(/[\s-]+/g, '')
+    result.roastLevel = ROAST_LEVELS.find(r => r.replace(/-/g, '') === normalized) ?? null
   }
   if (result.processingMethod) {
     const lower = result.processingMethod.toLowerCase()
@@ -56,8 +72,24 @@ function normalizeResult(raw: Record<string, unknown>) {
   return result
 }
 
-function fieldCount(result: Record<string, string | null>): number {
+function fieldCount(result: CoffeeFields): number {
   return QUALITY_FIELDS.filter(f => result[f] !== null).length
+}
+
+function hasNullFields(result: CoffeeFields): boolean {
+  return QUALITY_FIELDS.some(f => result[f] === null)
+}
+
+// Merge field-level: first non-null value wins; photoUrl only taken from non-Phase-3 sources
+function mergeFields(base: CoffeeFields, additions: CoffeeFields, allowPhoto = true): CoffeeFields {
+  const merged = { ...base }
+  for (const field of QUALITY_FIELDS) {
+    if (merged[field] === null && additions[field] !== null) {
+      if (field === 'photoUrl' && !allowPhoto) continue
+      merged[field] = additions[field]
+    }
+  }
+  return merged
 }
 
 function parseJson(text: string): Record<string, unknown> {
@@ -66,12 +98,13 @@ function parseJson(text: string): Record<string, unknown> {
   return JSON.parse(jsonStr.trim())
 }
 
-const EXTRACTION_PROMPT = (bagName: string, roasterName: string) => `Extract coffee metadata for "${bagName}" by "${roasterName}". Return a JSON object with these fields (use null if unknown):
+const EXTRACTION_PROMPT = (bagName: string, roasterName: string) =>
+  `Extract coffee metadata for "${bagName}" by "${roasterName}". Return a JSON object with these fields (use null if unknown):
 - roasterLocation: city/country of the roaster
-- origins: coffee origin country/region
+- origins: coffee origin country/region (may appear as a JSON array like ["Colombia","Ethiopia"] — convert to comma-separated string)
 - roastLevel: one of light, medium-light, medium, medium-dark, dark
-- varietal: coffee varietal/cultivar
-- altitude: growing altitude
+- varietal: coffee varietal/cultivar (capture verbatim even if non-standard, e.g. "Seasonally Varying", "Blend", "Unknown")
+- altitude: growing altitude — look for fields labelled "altitude" OR "elevation" (e.g. "1700-2200m", "1800 masl")
 - processingMethod: one of washed, natural, honey, anaerobic
 - flavorProfile: comma-separated tasting notes
 - bodyCategory: one of light, medium, full
@@ -80,107 +113,369 @@ const EXTRACTION_PROMPT = (bagName: string, roasterName: string) => `Extract cof
 
 Respond with only the JSON object, no other text.`
 
-// Option A: Brave Search + Shopify JSON API + Claude extraction
-// Returns the best result found across all pages (never throws for incompleteness)
-async function queryWithBrave(bagName: string, roasterName: string): Promise<Record<string, string | null>> {
-  const query = encodeURIComponent(`${bagName} ${roasterName} coffee`)
-  const braveRes = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${query}&count=5`, {
-    headers: {
-      'Accept': 'application/json',
-      'X-Subscription-Token': BRAVE_API_KEY,
-    },
-  })
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+}
 
-  if (!braveRes.ok) {
-    const body = await braveRes.text()
-    throw new Error(`Brave search failed: ${braveRes.status} — ${body}`)
+// Extract visible text from HTML (strips tags, decodes entities, collapses whitespace)
+function extractText(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  ).slice(0, 8000)
+}
+
+// Parse JSON-LD from HTML — tries all blocks, returns first that parses successfully
+function extractJsonLd(html: string): string {
+  const blocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+  for (const block of blocks) {
+    // Replace &quot; with \" so embedded JSON strings stay valid (e.g. "[\"Colombia\",\"Ethiopia\"]")
+    const fixed = block[1]
+      .replace(/&quot;/g, '\\"')
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;/g, "'")
+    try {
+      return JSON.stringify(JSON.parse(fixed))
+    } catch {
+      continue
+    }
+  }
+  return ''
+}
+
+async function fetchPageContent(url: string): Promise<string> {
+  // Fetch the full HTML page (always — this is the authoritative source)
+  const [htmlRes, shopifyImageUrl] = await Promise.all([
+    fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
+      signal: AbortSignal.timeout(8000),
+    }),
+    // For Shopify URLs, grab image URL in parallel from the .json endpoint
+    url.includes('/products/')
+      ? fetch(url.replace(/\?.*$/, '') + '.json', {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
+          signal: AbortSignal.timeout(5000),
+        })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => d?.product?.images?.[0]?.src ?? '')
+        .catch(() => '')
+      : Promise.resolve(''),
+  ])
+
+  if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}`)
+  const html = await htmlRes.text()
+
+  // Always use HTML text; prepend JSON-LD if it has useful content
+  const jsonLd = extractJsonLd(html)
+  const htmlText = extractText(html)
+  const pageContent = jsonLd.length > 100
+    ? `${jsonLd.slice(0, 2000)}\n\n${htmlText.slice(0, 6000)}`
+    : htmlText
+
+  return shopifyImageUrl ? `Image: ${shopifyImageUrl}\n${pageContent}` : pageContent
+}
+
+async function extractFieldsFromContent(
+  client: Anthropic,
+  bagName: string,
+  roasterName: string,
+  content: string,
+): Promise<CoffeeFields> {
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    messages: [{
+      role: 'user',
+      content: `${EXTRACTION_PROMPT(bagName, roasterName)}\n\nPage content:\n${content}`,
+    }],
+  })
+  const textBlock = message.content.find(b => b.type === 'text')
+  const raw = textBlock?.text.trim() ?? '{}'
+  return normalizeResult(parseJson(raw))
+}
+
+async function braveSearch(query: string): Promise<Array<{ url: string; title: string }>> {
+  const res = await fetch(
+    `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`,
+    {
+      headers: { 'Accept': 'application/json', 'X-Subscription-Token': BRAVE_API_KEY },
+      signal: AbortSignal.timeout(8000),
+    },
+  )
+  if (!res.ok) throw new Error(`Brave search failed: ${res.status}`)
+  const data = await res.json()
+  return data.web?.results ?? []
+}
+
+// Returns roaster's own domain heuristic: domain contains a word from roasterName
+function isRoasterDomain(url: string, roasterName: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase()
+    const words = roasterName.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+    return words.some(w => hostname.includes(w))
+  } catch {
+    return false
+  }
+}
+
+// Strips punctuation and extra words for a looser fallback search
+function simplifyBagName(bagName: string): string {
+  return bagName.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Construct a Shopify-style product URL from the bag name slug
+function shopifyProductUrl(domain: string, bagName: string): string {
+  const slug = bagName.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+  return `https://${domain}/products/${slug}`
+}
+
+// Phase 1: roaster's own website
+async function phase1(
+  client: Anthropic,
+  bagName: string,
+  roasterName: string,
+): Promise<CoffeeFields> {
+  // First try: exact quoted search
+  let results = await braveSearch(`"${bagName}" "${roasterName}" coffee`)
+  let roasterResult = results.find(r => isRoasterDomain(r.url, roasterName))
+
+  // Fallback: simplified bag name (strips commas, pipes, etc.)
+  if (!roasterResult) {
+    const simplified = simplifyBagName(bagName)
+    if (simplified !== bagName) {
+      results = await braveSearch(`${simplified} "${roasterName}" coffee`)
+      roasterResult = results.find(r => isRoasterDomain(r.url, roasterName)) ?? results[0]
+    } else {
+      roasterResult = results[0]
+    }
   }
 
-  const braveData = await braveRes.json()
-  const results: Array<{ url: string; title: string; description: string }> =
-    braveData.web?.results ?? []
+  if (!roasterResult) return emptyFields()
 
-  if (results.length === 0) throw new Error('No search results from Brave')
+  const content = await fetchPageContent(roasterResult.url)
+  if (content.length < 50) return emptyFields()
 
-  const client = new Anthropic({ apiKey: CLAUDE_API_KEY })
-  let bestResult: Record<string, string | null> | null = null
-  let bestCount = 0
+  return extractFieldsFromContent(client, bagName, roasterName, content)
+}
 
-  for (const result of results.slice(0, 5)) {
+// Phase 2: retail/aggregator sites in fixed order, filling nulls only
+async function phase2(
+  client: Anthropic,
+  bagName: string,
+  roasterName: string,
+  accumulated: CoffeeFields,
+): Promise<CoffeeFields> {
+  let result = { ...accumulated }
+
+  for (const domain of RETAIL_SITES) {
+    if (!hasNullFields(result)) break
+
     try {
-      const shopifyUrl = result.url.replace(/\?.*$/, '') + '.json'
-      const shopifyRes = await fetch(shopifyUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
-      })
+      // Try direct Shopify URL first (fast, no API call)
+      let urlToFetch: string | null = null
+      const directUrl = shopifyProductUrl(domain, bagName)
+      try {
+        const probe = await fetch(directUrl, {
+          method: 'HEAD',
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
+          signal: AbortSignal.timeout(4000),
+        })
+        if (probe.ok) urlToFetch = directUrl
+      } catch { /* fall through to search */ }
 
-      if (!shopifyRes.ok) continue
-
-      const shopifyData = await shopifyRes.json()
-      if (!shopifyData.product) continue
-
-      const p = shopifyData.product
-      const description = p.body_html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() ?? ''
-      const tags = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags ?? '')
-      const imageUrl = p.images?.[0]?.src ?? ''
-      const content = [
-        `Title: ${p.title}`,
-        `Vendor: ${p.vendor}`,
-        `Description: ${description}`,
-        `Tags: ${tags}`,
-        imageUrl ? `Image: ${imageUrl}` : '',
-      ].filter(Boolean).join('\n')
-
-      if (content.length < 50) continue
-
-      const message = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
-        messages: [
-          {
-            role: 'user',
-            content: `${EXTRACTION_PROMPT(bagName, roasterName)}\n\nProduct page data:\n${content}`,
-          },
-        ],
-      })
-
-      const textBlock = message.content.find(b => b.type === 'text')
-      const raw = textBlock?.text.trim() ?? ''
-      const normalized = normalizeResult(parseJson(raw))
-      const count = fieldCount(normalized)
-
-      if (count > bestCount) {
-        bestResult = normalized
-        bestCount = count
+      // Fall back to Brave search if direct URL didn't work
+      if (!urlToFetch) {
+        const simplified = simplifyBagName(bagName)
+        const firstWord = roasterName.split(/\s+/)[0]
+        let results = await braveSearch(`site:${domain} "${bagName}" "${roasterName}"`)
+        if (results.length === 0 && simplified !== bagName) {
+          results = await braveSearch(`site:${domain} ${simplified} "${roasterName}"`)
+        }
+        if (results.length === 0) {
+          results = await braveSearch(`site:${domain} "${bagName}" "${firstWord}"`)
+        }
+        if (results.length === 0) {
+          results = await braveSearch(`site:${domain} "${bagName}"`)
+        }
+        if (results.length > 0) urlToFetch = results[0].url
       }
 
-      // Good enough — stop trying more pages
-      if (bestCount >= 5) break
+      if (!urlToFetch) continue
+      const content = await fetchPageContent(urlToFetch)
+      if (content.length < 50) continue
+
+      const extracted = await extractFieldsFromContent(client, bagName, roasterName, content)
+      result = mergeFields(result, extracted)
     } catch {
       continue
     }
   }
 
-  if (!bestResult) throw new Error('No usable Shopify product pages found')
-  return bestResult
+  return result
 }
 
-// Option B: Claude text prompt from training knowledge
-async function queryClaudeFromMemory(bagName: string, roasterName: string): Promise<Record<string, string | null>> {
-  const client = new Anthropic({ apiKey: CLAUDE_API_KEY })
+function applyInferred(
+  base: CoffeeFields,
+  extracted: CoffeeFields,
+  inferredFields: string[],
+): CoffeeFields {
+  const merged = { ...base }
+  for (const field of QUALITY_FIELDS) {
+    if (field === 'photoUrl') continue // Phase 3 never provides photoUrl
+    if (merged[field] === null && extracted[field] !== null) {
+      merged[field] = extracted[field]
+      inferredFields.push(field)
+    }
+  }
+  return merged
+}
 
-  const message = await client.messages.create({
+// Phase 3: quick synthesis from training knowledge, then agentic loop for remaining gaps
+async function phase3(
+  client: Anthropic,
+  bagName: string,
+  roasterName: string,
+  accumulated: CoffeeFields,
+): Promise<{ result: CoffeeFields; inferredFields: string[] }> {
+  const inferredFields: string[] = []
+  let result = { ...accumulated }
+
+  // Step 1: Quick synthesis from training knowledge (no tools)
+  const quickResponse = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 512,
-    messages: [
-      {
-        role: 'user',
-        content: `You are a coffee expert. ${EXTRACTION_PROMPT(bagName, roasterName)}`,
+    messages: [{
+      role: 'user',
+      content: `You are a coffee expert with deep knowledge of roasters and their coffees. ${EXTRACTION_PROMPT(bagName, roasterName)}\n\nUse your training knowledge to fill in as many fields as you can. Only return null for fields you genuinely have no knowledge of. Do not hold back on well-known coffees or roasters.`,
+    }],
+  })
+  const quickText = quickResponse.content.find(b => b.type === 'text')?.text.trim() ?? '{}'
+  try {
+    const quickExtracted = normalizeResult(parseJson(quickText))
+    result = applyInferred(result, quickExtracted, inferredFields)
+  } catch {
+    // quick synthesis failed — continue to agentic loop
+  }
+
+  if (!hasNullFields(result)) return { result, inferredFields }
+
+  // Step 2: Agentic loop for remaining gaps (max 4 tool iterations, max 2 Claude calls)
+  const nullFields = QUALITY_FIELDS.filter(f => result[f] === null)
+  const contextSoFar: Anthropic.Messages.MessageParam[] = []
+
+  const tools: Anthropic.Messages.Tool[] = [
+    {
+      name: 'brave_search',
+      description: 'Search the web for information about a coffee',
+      input_schema: {
+        type: 'object' as const,
+        properties: { query: { type: 'string', description: 'Search query' } },
+        required: ['query'],
       },
-    ],
+    },
+    {
+      name: 'fetch_page',
+      description: 'Fetch the content of a web page',
+      input_schema: {
+        type: 'object' as const,
+        properties: { url: { type: 'string', description: 'URL to fetch' } },
+        required: ['url'],
+      },
+    },
+  ]
+
+  contextSoFar.push({
+    role: 'user',
+    content: `You are a coffee research agent. Find information about "${bagName}" by "${roasterName}". Fields still missing: ${nullFields.join(', ')}. Already found: ${JSON.stringify(result)}. Use brave_search and fetch_page to find the missing fields.`,
   })
 
-  const raw = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return normalizeResult(parseJson(raw))
+  let toolIterations = 0
+  let claudeCalls = 0
+  const MAX_TOOL_ITERATIONS = 4
+  const MAX_CLAUDE_CALLS = 2
+
+  while (claudeCalls < MAX_CLAUDE_CALLS) {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      tools,
+      messages: contextSoFar,
+    })
+    claudeCalls++
+
+    contextSoFar.push({ role: 'assistant', content: response.content })
+
+    if (response.stop_reason === 'end_turn' || toolIterations >= MAX_TOOL_ITERATIONS) break
+
+    const toolUses = response.content.filter(b => b.type === 'tool_use')
+    if (toolUses.length === 0) break
+
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = []
+
+    for (const toolUse of toolUses) {
+      if (toolIterations >= MAX_TOOL_ITERATIONS) break
+      toolIterations++
+
+      if (toolUse.type !== 'tool_use') continue
+      const input = toolUse.input as Record<string, string>
+
+      let toolOutput = ''
+      try {
+        if (toolUse.name === 'brave_search') {
+          const searchResults = await braveSearch(input.query)
+          toolOutput = searchResults.map(r => `${r.title}: ${r.url}`).join('\n')
+        } else if (toolUse.name === 'fetch_page') {
+          toolOutput = await fetchPageContent(input.url)
+        }
+      } catch (err) {
+        toolOutput = `Error: ${err instanceof Error ? err.message : 'unknown'}`
+      }
+
+      toolResults.push({
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: toolOutput.slice(0, 4000),
+      })
+    }
+
+    contextSoFar.push({ role: 'user', content: toolResults })
+  }
+
+  // Step 3: Final synthesis — incorporate everything gathered from the agentic loop
+  const synthesisMessages: Anthropic.Messages.MessageParam[] = [
+    ...contextSoFar,
+    {
+      role: 'user',
+      content: `Based on everything gathered above, extract all fields you can. ${EXTRACTION_PROMPT(bagName, roasterName)}\n\nAlready found (do not change these): ${JSON.stringify(result)}`,
+    },
+  ]
+
+  const synthesisResponse = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 512,
+    messages: synthesisMessages,
+  })
+
+  const textBlock = synthesisResponse.content.find(b => b.type === 'text')
+  const raw = textBlock?.text.trim() ?? '{}'
+  try {
+    const finalExtracted = normalizeResult(parseJson(raw))
+    result = applyInferred(result, finalExtracted, inferredFields)
+  } catch {
+    // final synthesis parse failed — return what we have
+  }
+
+  return { result, inferredFields }
 }
 
 Deno.serve(async (req) => {
@@ -198,7 +493,7 @@ Deno.serve(async (req) => {
     const cacheKey = `${roasterName.toLowerCase()}|${bagName.toLowerCase()}`
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // Check cache
+    // Cache check
     const cutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
     const { data: cached } = await supabase
       .from('lookup_cache')
@@ -208,34 +503,66 @@ Deno.serve(async (req) => {
       .single()
 
     if (cached) {
-      return Response.json({ source: 'cache', ...cached.result }, { headers: corsHeaders })
+      return Response.json({ source: 'cache', inferredFields: [], ...cached.result }, { headers: corsHeaders })
     }
 
-    // Run both options and pick the one with more fields populated
-    const [braveSettled, claudeSettled] = await Promise.allSettled([
-      queryWithBrave(bagName, roasterName),
-      queryClaudeFromMemory(bagName, roasterName),
-    ])
+    const client = new Anthropic({ apiKey: CLAUDE_API_KEY })
 
-    const braveResult = braveSettled.status === 'fulfilled' ? braveSettled.value : null
-    const claudeResult = claudeSettled.status === 'fulfilled' ? claudeSettled.value : null
+    // Phase 1: roaster direct site
+    let result = emptyFields()
+    let inferredFields: string[] = []
+    let source = 'manual'
 
-    if (!braveResult && !claudeResult) {
-      return Response.json({ source: 'manual' }, { headers: corsHeaders })
+    try {
+      result = await phase1(client, bagName, roasterName)
+    } catch {
+      // Phase 1 failed — continue to Phase 2
     }
 
-    const braveCount = braveResult ? fieldCount(braveResult) : -1
-    const claudeCount = claudeResult ? fieldCount(claudeResult) : -1
+    if (!hasNullFields(result)) {
+      source = 'roaster'
+    } else {
+      // Phase 2: retail sites
+      try {
+        result = await phase2(client, bagName, roasterName, result)
+      } catch {
+        // Phase 2 failed — continue to Phase 3
+      }
 
-    const result = braveCount >= claudeCount ? braveResult! : claudeResult!
-    const source = braveCount >= claudeCount ? 'brave' : 'claude'
+      if (!hasNullFields(result)) {
+        source = 'retail'
+      } else {
+        // Phase 3: agentic loop (any fields still null)
+        try {
+          const phase3Timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Phase 3 timeout')), 25000)
+          )
+          const phase3Run = phase3(client, bagName, roasterName, result)
+          const phase3Result = await Promise.race([phase3Run, phase3Timeout])
+          result = phase3Result.result
+          inferredFields = phase3Result.inferredFields
+        } catch {
+          // Phase 3 failed or timed out — use what we have
+        }
 
-    // Store in cache
-    await supabase.from('lookup_cache').upsert({ cache_key: cacheKey, result, cached_at: new Date().toISOString() })
+        source = hasNullFields(result)
+          ? (fieldCount(result) === 0 ? 'manual' : 'partial')
+          : 'agent'
+      }
+    }
 
-    return Response.json({ source, ...result }, { headers: corsHeaders })
+    if (source === 'manual') {
+      return Response.json({ source: 'manual', inferredFields: [] }, { headers: corsHeaders })
+    }
+
+    const cachePayload = { ...result, inferredFields }
+    await supabase
+      .from('lookup_cache')
+      .upsert({ cache_key: cacheKey, result: cachePayload, cached_at: new Date().toISOString() })
+
+    return Response.json({ source, inferredFields, ...result }, { headers: corsHeaders })
   } catch (err) {
     console.error('lookup-coffee error:', err)
-    return Response.json({ error: 'lookup_failed', source: 'manual' }, { status: 500, headers: corsHeaders })
+    return Response.json({ error: 'lookup_failed', source: 'manual', inferredFields: [] }, { status: 500, headers: corsHeaders })
   }
 })

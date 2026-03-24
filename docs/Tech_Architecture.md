@@ -167,10 +167,10 @@ For each site:
 2. Fetch full HTML of the top result, parse JSON-LD then raw text as above
 3. Pass content to Claude for extraction
 4. Only fill fields that are still `null` — never overwrite a value already found in Phase 1 or an earlier Phase 2 site
-5. Move to the next site if fields are still missing; stop early if all 9 fields are populated
+5. Move to the next site if fields are still missing; stop early if all 10 fields are populated
 
 #### Phase 3 — Agentic Claude Loop (Fallback for Obscure Coffees)
-Only runs if Phases 1 and 2 together produced fewer than 6 populated fields. Designed for small or new roasters with minimal web presence.
+Only runs if any of the 10 quality fields are still null after Phases 1 and 2. Designed for small or new roasters with minimal web presence.
 
 Claude runs as a lightweight agent with two tools: `brave_search(query)` and `fetch_page(url)`. It reasons about which fields are still missing, formulates targeted searches, and iterates until it has enough data or exhausts its budget.
 
@@ -205,10 +205,10 @@ Every lookup response includes two fields for traceability and UI annotation:
 | Value | Meaning |
 |---|---|
 | `cache` | Returned from 90-day lookup cache (no phases run) |
-| `roaster` | Phase 1 produced ≥ 6 fields (roaster direct site) |
-| `retail` | Phase 2 produced ≥ 6 fields combined with Phase 1 (retail sites) |
-| `agent` | Phase 3 was needed to reach ≥ 6 fields |
-| `partial` | All phases ran, still < 6 fields — form pre-filled with what was found |
+| `roaster` | Phase 1 filled all 10 fields (no Phase 2 or 3 needed) |
+| `retail` | Phases 1+2 filled all 10 fields (no Phase 3 needed) |
+| `agent` | Phase 3 ran and filled all remaining null fields |
+| `partial` | All phases ran, some fields still null — form pre-filled with what was found |
 | `manual` | Complete failure — user fills form from scratch |
 
 **`inferredFields`** — array of field names whose values came from Phase 3 (e.g., `["varietal", "altitude"]`). Used by the frontend to display the "AI inferred" annotation. Empty array if Phase 3 did not run or contributed no fields.
@@ -226,7 +226,7 @@ Display a 3-step visual progress indicator with a status text message that updat
 | Phase 2 | "Checking popular coffee retail sites..." |
 | Phase 3 | "Searching the web for more details..." |
 
-Both the step indicator and the text message update in real time. The indicator remains visible until the lookup completes and the form is populated.
+Both the step indicator and the text message update in real time. The indicator remains visible until the lookup completes and the form is populated. The Phase 3 step only appears if Phase 3 actually runs.
 
 **"AI Inferred" Field Annotation (after lookup)**
 Any field whose name appears in `inferredFields` is annotated with an **"AI inferred"** label in two places:
@@ -319,7 +319,7 @@ Missing fields (`null` in the data layer) are displayed as **"N/A"** in the UI. 
 |---|----------|--------|
 | 1 | Frontend hosting (Vercel vs Netlify vs other) | **Unresolved** |
 | 2 | What to do when `photo_url` resolves to a broken image after save? | **Unresolved** — no retry or re-resolve mechanism exists |
-| 3 | Body notes field exists in DB and BrewLogScreen but not in product spec brew log table | **Unresolved** — possible spec/code drift |
+| 3 | Body notes field exists in DB and BrewLogScreen but not in product spec brew log table | **Resolved** — Body Notes is included in the product spec brew log table |
 | 4 | Supabase Auth `lock` workaround in `supabase.js` (custom lock function) | **Unresolved** — cause unknown; investigate before prod |
 | 5 | No staging environment | **Accepted risk** for MVP |
 | 6 | Manual coffee entry path (no photo) | **Implemented** — Add Manually button on AddCoffeeScreen skips OCR+lookup, goes straight to blank form |
@@ -328,7 +328,8 @@ Missing fields (`null` in the data layer) are displayed as **"N/A"** in the UI. 
 | 9 | lookup-coffee phase order: roaster-first vs. aggregator-first | **Resolved** — roaster site checked first (highest trust), then retail sites in fixed order, then agent loop |
 | 10 | How to communicate lookup progress to user | **Resolved** — 3-step visual progress indicator + per-phase status text messages |
 | 11 | How to surface AI-inferred field confidence to user | **Resolved** — "AI inferred" label shown inline on form and on Coffee Detail screen for any field sourced from Phase 3; tracked via `inferredFields` array in API response |
-| 12 | Phase 3 timeout and overall lookup wait time | **Accepted for now** — Phase 3 capped at 10 seconds; worst-case total ~20s. Option C (run Phase 3 in background, stream results to form) deferred for future improvement |
+| 12 | Phase 3 timeout and overall lookup wait time | **Accepted for now** — Phase 3 capped at 25 seconds; worst-case total ~35s. Option C (run Phase 3 in background, stream results to form) deferred for future improvement |
+| 13 | Roaster sites that display attributes as visual graphs (e.g. Stumptown roast level bar chart) | **Accepted for now** — Phase 1 misses visual-only fields; Phase 2 retail sites display the same data as plain text and fill the gap. Future improvement: scan raw HTML for `data-*` attributes on chart/slider elements (Option B), or render page via headless browser + Claude vision (Option C, post-MVP) |
 
 ### Rejected Alternatives
 - **Separate Node.js backend:** Rejected — Supabase edge functions sufficient; reduces infra complexity.

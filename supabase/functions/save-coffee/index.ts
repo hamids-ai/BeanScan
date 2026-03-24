@@ -105,12 +105,8 @@ Deno.serve(async (req) => {
     if (!coffeeId) {
       return Response.json({ error: 'missing_coffee_id' }, { status: 400, headers: corsHeaders })
     }
-    if (grindSetting == null) {
-      return Response.json({ error: 'grind_setting_required' }, { status: 400, headers: corsHeaders })
-    }
-
-    const grindNum = parseFloat(grindSetting)
-    if (isNaN(grindNum) || grindNum <= 0) {
+    const grindNum = grindSetting != null && grindSetting !== '' ? parseFloat(grindSetting) : null
+    if (grindNum !== null && (isNaN(grindNum) || grindNum <= 0)) {
       return Response.json({ error: 'invalid_grind_setting' }, { status: 400, headers: corsHeaders })
     }
     if (rating && !VALID_RATINGS.includes(rating)) {
@@ -123,7 +119,7 @@ Deno.serve(async (req) => {
       .update({
         brew_date: brewDate || null,
         roast_date: roastDate || null,
-        grind_setting: grindNum,
+        grind_setting: grindNum ?? null,
         rating: rating || null,
         tasting_notes: tastingNotes || null,
         body_notes: bodyNotes || null,
