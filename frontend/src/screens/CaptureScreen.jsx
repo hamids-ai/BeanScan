@@ -158,7 +158,7 @@ function CaptureScreen() {
       ) : (
         <div className="processing-container">
           <div className="spinner spinner-lg" style={{ margin: '0 auto var(--spacing-6)' }} />
-          <h2 className="processing-title">Analyzing your photo...</h2>
+          <h2 className="processing-title">{steps.findLast(s => s.type === 'loading')?.text ?? 'Analyzing your photo...'}</h2>
           <div className="processing-steps">
             {steps.map((step, i) => (
               <div key={i} className={`processing-step processing-step-${step.type}`}>

@@ -57,7 +57,7 @@ function normalizeResult(raw: Record<string, unknown>): CoffeeFields {
   }
 
   if (result.roastLevel) {
-    const normalized = result.roastLevel.toLowerCase().replace(/[\s-]+/g, '')
+    const normalized = result.roastLevel.toLowerCase().replace(/\broast\b/g, '').replace(/[\s-]+/g, '')
     result.roastLevel = ROAST_LEVELS.find(r => r.replace(/-/g, '') === normalized) ?? null
   }
   if (result.processingMethod) {
@@ -101,12 +101,12 @@ function parseJson(text: string): Record<string, unknown> {
 const EXTRACTION_PROMPT = (bagName: string, roasterName: string) =>
   `Extract coffee metadata for "${bagName}" by "${roasterName}". Return a JSON object with these fields (use null if unknown):
 - roasterLocation: city/country of the roaster
-- origins: coffee origin country/region (may appear as a JSON array like ["Colombia","Ethiopia"] — convert to comma-separated string)
-- roastLevel: one of light, medium-light, medium, medium-dark, dark
-- varietal: coffee varietal/cultivar (capture verbatim even if non-standard, e.g. "Seasonally Varying", "Blend", "Unknown")
+- origins: coffee origin country/region; may be in the product name itself (e.g. "Peru Persy Pusma Martinez" → "Peru"); may appear as a JSON array — convert to comma-separated string
+- roastLevel: one of exactly: light, medium-light, medium, medium-dark, dark; may appear in the product name as "Light Roast", "Medium Roast", etc. — extract only the level word(s), not "Roast"
+- varietal: coffee varietal/cultivar as a comma-separated string; may appear in a JSON-LD additionalProperty with name "varietal" — convert array values to comma-separated string
 - altitude: growing altitude — look for fields labelled "altitude" OR "elevation" (e.g. "1700-2200m", "1800 masl")
-- processingMethod: one of washed, natural, honey, anaerobic
-- flavorProfile: comma-separated tasting notes
+- processingMethod: one of exactly: washed, natural, honey, anaerobic; may appear in a JSON-LD additionalProperty with name "process" — use the first array value
+- flavorProfile: comma-separated tasting notes; may appear in a JSON-LD additionalProperty with name "tastes" — convert array to comma-separated string
 - bodyCategory: one of light, medium, full
 - bodyDescription: brief description of the body/mouthfeel
 - photoUrl: URL to a product image for this specific coffee
@@ -133,6 +133,20 @@ function extractText(html: string): string {
       .replace(/\s+/g, ' ')
       .trim()
   ).slice(0, 8000)
+}
+
+// Extract name/property + content pairs from <meta> tags
+function extractMetaTags(html: string): string {
+  const lines: string[] = []
+  for (const match of html.matchAll(/<meta[^>]+>/gi)) {
+    const tag = match[0]
+    const nameMatch = tag.match(/(?:name|property)=["']([^"']+)["']/i)
+    const contentMatch = tag.match(/content=["']([^"']+)["']/i)
+    if (nameMatch && contentMatch) {
+      lines.push(`${nameMatch[1]}: ${contentMatch[1]}`)
+    }
+  }
+  return lines.join('\n')
 }
 
 // Parse JSON-LD from HTML — tries all blocks, returns first that parses successfully
@@ -175,14 +189,17 @@ async function fetchPageContent(url: string): Promise<string> {
   if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}`)
   const html = await htmlRes.text()
 
-  // Always use HTML text; prepend JSON-LD if it has useful content
   const jsonLd = extractJsonLd(html)
+  const metaTags = extractMetaTags(html)
   const htmlText = extractText(html)
-  const pageContent = jsonLd.length > 100
-    ? `${jsonLd.slice(0, 2000)}\n\n${htmlText.slice(0, 6000)}`
-    : htmlText
 
-  return shopifyImageUrl ? `Image: ${shopifyImageUrl}\n${pageContent}` : pageContent
+  const parts: string[] = []
+  if (shopifyImageUrl) parts.push(`Image: ${shopifyImageUrl}`)
+  if (jsonLd.length > 100) parts.push(jsonLd.slice(0, 2000))
+  if (metaTags) parts.push(metaTags.slice(0, 1000))
+  parts.push(htmlText.slice(0, 5000))
+
+  return parts.join('\n\n')
 }
 
 async function extractFieldsFromContent(
