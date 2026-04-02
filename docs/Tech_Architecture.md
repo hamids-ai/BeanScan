@@ -139,17 +139,11 @@ Merge (field-level, first source wins) → Cache → Return
 - **Phase 3 trigger:** runs if any fields remain null after Phases 1 and 2 complete
 
 #### Phase 1 — Roaster Direct Site
-The roaster's own website is the highest-trust source of truth.
+The roaster's own website is the highest-trust source. All fields are extracted from it — it is authoritative data about the roaster's own coffee.
 
-1. Brave Search: `"{bagName}" "{roasterName}" coffee` — filter results to the roaster's own domain (heuristic: domain contains a word from `roasterName`)
-2. Fetch full HTML of the best matching product page URL
-   - Raw HTML fetch captures content in collapsed/accordion UI sections — no special handling needed
-   - Try Shopify `.json` endpoint first as a fast path if URL appears to be Shopify
-   - Otherwise parse `<script type="application/ld+json">` (JSON-LD / Schema.org `Product`) — structured and reliable when present
-   - If JSON-LD is insufficient, extract first ~8,000 chars of visible text
-3. Pass content to Claude for field extraction
-4. Record all non-null fields found — these are never overwritten by later phases
-5. `photoUrl` sourced here is preferred over all other phases
+1. Brave Search with progressively looser queries until a roaster-domain URL is found; prefer URLs whose path contains identifying bag name words (scored by `urlBagNameScore`)
+2. Fetch full HTML; parse JSON-LD, meta tags, and visible text
+3. Pass content to Claude; extract all available fields from the result
 
 #### Phase 2 — Popular Coffee Retail Sites
 Retail and aggregator sites are checked in this exact order to fill any fields still null after Phase 1:
@@ -157,30 +151,30 @@ Retail and aggregator sites are checked in this exact order to fill any fields s
 | Order | Site |
 |---|---|
 | 1 | drinktrade.com |
-| 2 | beanbox.com |
-| 3 | wholelattelove.com |
-| 4 | mistobox.com |
-| 5 | coffeereview.com |
+| 2 | wholelattelove.com |
+| 3 | mistobox.com |
+| 4 | coffeereview.com |
+| 5 | beanbox.com |
 
 For each site:
-1. Brave Search with `site:` operator: `site:{domain} "{bagName}" "{roasterName}"`
-2. Fetch full HTML of the top result, parse JSON-LD then raw text as above
-3. Pass content to Claude for extraction
-4. Only fill fields that are still `null` — never overwrite a value already found in Phase 1 or an earlier Phase 2 site
-5. Move to the next site if fields are still missing; stop early if all 10 fields are populated
+1. Try direct Shopify product URL probe first (fast, no API call): `https://{domain}/products/{bag-name-slug}`
+2. Fall back to Brave Search with progressively looser queries including slug-based search: `"{roasterSlug}-{bagSlug}" site:{domain}`
+3. **URL bag name scoring:** candidate URLs are scored by how many identifying bag name words (excluding generic words like "organic", "roast", "blend") appear in the URL path. A minimum score of 2 is required — results scoring below this threshold are rejected to prevent fetching wrong-coffee pages
+4. Fetch full HTML of the accepted URL; parse JSON-LD, meta tags, visible text
+5. Pass content to Claude; only fill fields that are still `null`
 
-#### Phase 3 — Agentic Claude Loop (Fallback for Obscure Coffees)
-Only runs if any of the 10 quality fields are still null after Phases 1 and 2. Designed for small or new roasters with minimal web presence.
+#### Phase 3 — Training Knowledge + Agentic Loop (Fallback)
+Only runs if any fields are still null after Phases 1 and 2.
 
-Claude runs as a lightweight agent with two tools: `brave_search(query)` and `fetch_page(url)`. It reasons about which fields are still missing, formulates targeted searches, and iterates until it has enough data or exhausts its budget.
+**Step 1 — Quick synthesis (always runs):** Claude uses training knowledge to fill as many fields as it can from the bag name and roaster name alone (e.g., `origins` is often extractable from the bag name). If any fields are populated, results are returned immediately without proceeding to the agentic loop — this prevents agentic loop timeouts from discarding quick synthesis results.
 
-Constraints:
-- Max 4 tool-use iterations (each search or fetch counts as one)
-- Max 3 Claude calls (each receives accumulated tool results as context)
-- Phase timeout: 10 seconds
-- Agent receives the partial result from Phases 1 and 2 as context — only hunts for still-null fields
-- Agent stops early if ≥ 6 fields are populated before budget is exhausted
-- On the final synthesis call, Claude uses everything gathered plus its own training knowledge to fill any remaining nulls it can reasonably infer
+**Step 2 — Agentic loop (only if quick synthesis found nothing):** Claude runs as a lightweight agent with `brave_search` and `fetch_page` tools, hunting for still-missing fields.
+
+Agentic loop constraints:
+- Max 4 tool-use iterations
+- Max 2 Claude calls
+- Phase timeout: 25 seconds
+- On the final synthesis call, Claude uses everything gathered to fill any remaining nulls
 
 Fields populated by Phase 3 are tracked separately in `inferredFields` (see Source Tagging below) so the UI can annotate them as "AI inferred."
 

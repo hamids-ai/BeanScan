@@ -24,10 +24,10 @@ const QUALITY_FIELDS = [
 
 const RETAIL_SITES = [
   'drinktrade.com',
-  'beanbox.com',
   'wholelattelove.com',
   'mistobox.com',
   'coffeereview.com',
+  'beanbox.com',
 ]
 
 type CoffeeFields = Record<string, string | null>
@@ -57,8 +57,12 @@ function normalizeResult(raw: Record<string, unknown>): CoffeeFields {
   }
 
   if (result.roastLevel) {
-    const normalized = result.roastLevel.toLowerCase().replace(/\broast\b/g, '').replace(/[\s-]+/g, '')
-    result.roastLevel = ROAST_LEVELS.find(r => r.replace(/-/g, '') === normalized) ?? null
+    // Strip "roast" and non-alpha chars, then match any standard level word(s) — handles
+    // marketing names like "Medium & Cozy", "Light & Bright", "Dark & Bold"
+    const s = result.roastLevel.toLowerCase().replace(/\broast\b/g, ' ').replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
+    // Check most-specific levels first so "medium-dark" isn't swallowed by "medium"
+    const orderedLevels = ['medium-dark', 'medium-light', 'medium', 'light', 'dark']
+    result.roastLevel = orderedLevels.find(r => r.split('-').every(word => s.split(' ').includes(word))) ?? null
   }
   if (result.processingMethod) {
     const lower = result.processingMethod.toLowerCase()
@@ -102,7 +106,7 @@ const EXTRACTION_PROMPT = (bagName: string, roasterName: string) =>
   `Extract coffee metadata for "${bagName}" by "${roasterName}". Return a JSON object with these fields (use null if unknown):
 - roasterLocation: city/country of the roaster
 - origins: coffee origin country/region; may be in the product name itself (e.g. "Peru Persy Pusma Martinez" → "Peru"); may appear as a JSON array — convert to comma-separated string
-- roastLevel: one of exactly: light, medium-light, medium, medium-dark, dark; may appear in the product name as "Light Roast", "Medium Roast", etc. — extract only the level word(s), not "Roast"
+- roastLevel: one of exactly: light, medium-light, medium, medium-dark, dark; may appear as "Light Roast", "Medium Roast", etc. or as marketing phrases like "Medium & Cozy", "Light & Bright", "Dark & Bold" — extract only the standard level word(s)
 - varietal: coffee varietal/cultivar as a comma-separated string; may appear in a JSON-LD additionalProperty with name "varietal" — convert array values to comma-separated string
 - altitude: growing altitude — look for fields labelled "altitude" OR "elevation" (e.g. "1700-2200m", "1800 masl")
 - processingMethod: one of exactly: washed, natural, honey, anaerobic; may appear in a JSON-LD additionalProperty with name "process" — use the first array value
@@ -149,26 +153,25 @@ function extractMetaTags(html: string): string {
   return lines.join('\n')
 }
 
-// Parse JSON-LD from HTML — tries all blocks, returns first that parses successfully
+// Parse JSON-LD from HTML — returns all parseable blocks joined together
 function extractJsonLd(html: string): string {
   const blocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+  const parsed: string[] = []
   for (const block of blocks) {
-    // Replace &quot; with \" so embedded JSON strings stay valid (e.g. "[\"Colombia\",\"Ethiopia\"]")
     const fixed = block[1]
       .replace(/&quot;/g, '\\"')
       .replace(/&amp;/g, '&')
       .replace(/&#39;/g, "'")
     try {
-      return JSON.stringify(JSON.parse(fixed))
+      parsed.push(JSON.stringify(JSON.parse(fixed)))
     } catch {
       continue
     }
   }
-  return ''
+  return parsed.join('\n')
 }
 
 async function fetchPageContent(url: string): Promise<string> {
-  // Fetch the full HTML page (always — this is the authoritative source)
   const [htmlRes, shopifyImageUrl] = await Promise.all([
     fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
@@ -195,9 +198,9 @@ async function fetchPageContent(url: string): Promise<string> {
 
   const parts: string[] = []
   if (shopifyImageUrl) parts.push(`Image: ${shopifyImageUrl}`)
-  if (jsonLd.length > 100) parts.push(jsonLd.slice(0, 2000))
+  if (jsonLd.length > 100) parts.push(jsonLd.slice(0, 4000))
   if (metaTags) parts.push(metaTags.slice(0, 1000))
-  parts.push(htmlText.slice(0, 5000))
+  parts.push(htmlText)
 
   return parts.join('\n\n')
 }
@@ -245,6 +248,21 @@ function isRoasterDomain(url: string, roasterName: string): boolean {
   }
 }
 
+// Generic descriptors that appear in many coffee URLs and are not identifying
+const GENERIC_COFFEE_WORDS = new Set(['organic', 'coffee', 'blend', 'roast', 'roasted', 'light', 'medium', 'dark', 'espresso', 'decaf', 'single'])
+
+// Score a URL by how many identifying bag name words appear in its path
+// Filters out generic descriptors that match too many unrelated coffees
+function urlBagNameScore(url: string, bagName: string): number {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    const words = bagName.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !GENERIC_COFFEE_WORDS.has(w))
+    return words.filter(w => path.includes(w)).length
+  } catch {
+    return 0
+  }
+}
+
 // Strips punctuation and extra words for a looser fallback search
 function simplifyBagName(bagName: string): string {
   return bagName.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -256,25 +274,29 @@ function shopifyProductUrl(domain: string, bagName: string): string {
   return `https://${domain}/products/${slug}`
 }
 
-// Phase 1: roaster's own website
+// Phase 1: roaster's own website — only used for roasterLocation
 async function phase1(
   client: Anthropic,
   bagName: string,
   roasterName: string,
 ): Promise<CoffeeFields> {
-  // First try: exact quoted search
-  let results = await braveSearch(`"${bagName}" "${roasterName}" coffee`)
-  let roasterResult = results.find(r => isRoasterDomain(r.url, roasterName))
-
-  // Fallback: simplified bag name (strips commas, pipes, etc.)
-  if (!roasterResult) {
-    const simplified = simplifyBagName(bagName)
-    if (simplified !== bagName) {
-      results = await braveSearch(`${simplified} "${roasterName}" coffee`)
-      roasterResult = results.find(r => isRoasterDomain(r.url, roasterName)) ?? results[0]
-    } else {
-      roasterResult = results[0]
+  // Try progressively looser searches, picking the roaster-domain URL with the best bag name match
+  const simplified = simplifyBagName(bagName)
+  const searches = [
+    `"${bagName}" "${roasterName}" coffee`,
+    `${simplified} "${roasterName}" coffee`,
+    `${simplified} ${roasterName} coffee`,
+  ]
+  let roasterResult: { url: string; title: string } | undefined
+  for (const query of searches) {
+    const results = await braveSearch(query)
+    const roasterResults = results.filter(r => isRoasterDomain(r.url, roasterName))
+    if (roasterResults.length > 0) {
+      roasterResult = roasterResults.sort((a, b) => urlBagNameScore(b.url, bagName) - urlBagNameScore(a.url, bagName))[0]
+      break
     }
+    const best = results.sort((a, b) => urlBagNameScore(b.url, bagName) - urlBagNameScore(a.url, bagName))[0]
+    if (best) { roasterResult = best; break }
   }
 
   if (!roasterResult) return emptyFields()
@@ -282,7 +304,7 @@ async function phase1(
   const content = await fetchPageContent(roasterResult.url)
   if (content.length < 50) return emptyFields()
 
-  return extractFieldsFromContent(client, bagName, roasterName, content)
+  return await extractFieldsFromContent(client, bagName, roasterName, content)
 }
 
 // Phase 2: retail/aggregator sites in fixed order, filling nulls only
@@ -314,17 +336,29 @@ async function phase2(
       if (!urlToFetch) {
         const simplified = simplifyBagName(bagName)
         const firstWord = roasterName.split(/\s+/)[0]
-        let results = await braveSearch(`site:${domain} "${bagName}" "${roasterName}"`)
-        if (results.length === 0 && simplified !== bagName) {
-          results = await braveSearch(`site:${domain} ${simplified} "${roasterName}"`)
+        const roasterSlug = roasterName.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '-')
+        const bagSlug = simplified.toLowerCase().replace(/\s+/g, '-')
+        const combinedSlug = `${roasterSlug}-${bagSlug}`
+        const searches = [
+          `site:${domain} "${bagName}" "${roasterName}"`,
+          `site:${domain} "${bagName}" "${firstWord}"`,
+          `site:${domain} ${simplified} "${firstWord}"`,
+          `"${combinedSlug}" site:${domain}`,
+          `"${combinedSlug}" ${domain}`,
+          `site:${domain} ${simplified}`,
+        ]
+        for (const query of searches) {
+          const results = await braveSearch(query)
+          if (results.length > 0) {
+            const scored = results
+              .map(r => ({ ...r, score: urlBagNameScore(r.url, bagName) }))
+              .sort((a, b) => b.score - a.score)
+            const best = scored[0]
+            // Require score >= 2 to avoid fetching wrong-coffee pages that share
+            // only generic words (e.g. "organic", "peru") with the bag name
+            if (best.score >= 2) { urlToFetch = best.url; break }
+          }
         }
-        if (results.length === 0) {
-          results = await braveSearch(`site:${domain} "${bagName}" "${firstWord}"`)
-        }
-        if (results.length === 0) {
-          results = await braveSearch(`site:${domain} "${bagName}"`)
-        }
-        if (results.length > 0) urlToFetch = results[0].url
       }
 
       if (!urlToFetch) continue
@@ -373,7 +407,7 @@ async function phase3(
     max_tokens: 512,
     messages: [{
       role: 'user',
-      content: `You are a coffee expert with deep knowledge of roasters and their coffees. ${EXTRACTION_PROMPT(bagName, roasterName)}\n\nUse your training knowledge to fill in as many fields as you can. Only return null for fields you genuinely have no knowledge of. Do not hold back on well-known coffees or roasters.`,
+      content: `You are a coffee expert with deep knowledge of roasters and their coffees. ${EXTRACTION_PROMPT(bagName, roasterName)}\n\nUse your training knowledge to fill in as many fields as you can. Only return null for fields you genuinely have no knowledge of. Do not hold back on well-known coffees or roasters.\n\nIMPORTANT: For roasterLocation, only provide a value if you are certain — do not guess. It is better to return null than a wrong city.`,
     }],
   })
   const quickText = quickResponse.content.find(b => b.type === 'text')?.text.trim() ?? '{}'
@@ -381,10 +415,13 @@ async function phase3(
     const quickExtracted = normalizeResult(parseJson(quickText))
     result = applyInferred(result, quickExtracted, inferredFields)
   } catch {
-    // quick synthesis failed — continue to agentic loop
+    // quick synthesis parse failed — continue to agentic loop
   }
 
   if (!hasNullFields(result)) return { result, inferredFields }
+
+  // If quick synthesis found anything, return now — don't risk losing it to an agentic loop timeout
+  if (inferredFields.length > 0) return { result, inferredFields }
 
   // Step 2: Agentic loop for remaining gaps (max 4 tool iterations, max 2 Claude calls)
   const nullFields = QUALITY_FIELDS.filter(f => result[f] === null)
@@ -549,7 +586,7 @@ Deno.serve(async (req) => {
       if (!hasNullFields(result)) {
         source = 'retail'
       } else {
-        // Phase 3: agentic loop (any fields still null)
+        // Phase 3: training knowledge + agentic loop for remaining gaps
         try {
           const phase3Timeout = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Phase 3 timeout')), 25000)
