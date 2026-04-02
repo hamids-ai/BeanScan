@@ -1,5 +1,6 @@
 # BeanScan - Claude Instructions
 
+
 ## Development Status Tracking
 
 At the start of each session, read `docs/Development_Status.md` to understand where the project left off. Also read `docs/Tech_Architecture.md` for system architecture context.
