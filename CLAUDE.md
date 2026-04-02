@@ -4,7 +4,7 @@
 
 At the start of each session, read `docs/Development_Status.md` to understand where the project left off. Also read `docs/Tech_Architecture.md` for system architecture context.
 
-Before making any changes to `supabase/functions/lookup-coffee/index.ts`, read `docs/lookup-coffee-function-decisions.md` first.
+Before making any changes to `supabase/functions/lookup-coffee/index.ts`, read `docs/lookup-coffee-function-decisions.md` first. 
 
 Follow the coding standards in `docs/CODING_STANDARDS.md`.
 
@@ -12,7 +12,11 @@ Follow the coding standards in `docs/CODING_STANDARDS.md`.
 
 When an explicit product requirement changes, update `docs/BeanScan_Product_Spec.md` and increment the version number and changelog at the bottom of the file.
 
-When a significant technical architecture decision changes, update `docs/Tech_Architecture.md` accordingly.
+### When to update each technical document
+
+**`docs/Tech_Architecture.md`** — update when the *shape or behavior* of the system changes: phase order, merge logic, source tagging, UX requirements, new phases, new fields, or any architectural decision. Answers: *"How does the system work?"* Do NOT update it for implementation-level details.
+
+**`docs/lookup-coffee-function-decisions.md`** — update when *implementation mechanics* change: how a helper function works, why a specific threshold or heuristic was chosen, known issues, scoring logic, edge cases, or anything a developer needs to know before editing the function. Answers: *"Why is the code written this way?"* Do NOT duplicate architectural descriptions already in Tech_Architecture.md.
 
 ## DIRECTIVES
 

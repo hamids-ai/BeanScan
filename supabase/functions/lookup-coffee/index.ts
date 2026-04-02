@@ -172,21 +172,30 @@ function extractJsonLd(html: string): string {
 }
 
 async function fetchPageContent(url: string): Promise<string> {
-  const [htmlRes, shopifyImageUrl] = await Promise.all([
+  const [htmlRes, shopifyData] = await Promise.all([
     fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
       signal: AbortSignal.timeout(8000),
     }),
-    // For Shopify URLs, grab image URL in parallel from the .json endpoint
+    // For Shopify URLs, fetch .json endpoint in parallel for richer structured data
     url.includes('/products/')
       ? fetch(url.replace(/\?.*$/, '') + '.json', {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BeanScan/1.0)' },
           signal: AbortSignal.timeout(5000),
         })
         .then(r => r.ok ? r.json() : null)
-        .then(d => d?.product?.images?.[0]?.src ?? '')
-        .catch(() => '')
-      : Promise.resolve(''),
+        .then(d => {
+          if (!d?.product) return null
+          const p = d.product
+          const tags = Array.isArray(p.tags) ? p.tags.join(', ') : (p.tags ?? '')
+          return {
+            imageUrl: p.images?.[0]?.src ?? '',
+            tags,
+            bodyHtml: p.body_html ?? '',
+          }
+        })
+        .catch(() => null)
+      : Promise.resolve(null),
   ])
 
   if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}`)
@@ -197,7 +206,9 @@ async function fetchPageContent(url: string): Promise<string> {
   const htmlText = extractText(html)
 
   const parts: string[] = []
-  if (shopifyImageUrl) parts.push(`Image: ${shopifyImageUrl}`)
+  if (shopifyData?.imageUrl) parts.push(`Image: ${shopifyData.imageUrl}`)
+  if (shopifyData?.tags) parts.push(`Tags: ${shopifyData.tags}`)
+  if (shopifyData?.bodyHtml) parts.push(`Product description: ${extractText(shopifyData.bodyHtml)}`)
   if (jsonLd.length > 100) parts.push(jsonLd.slice(0, 4000))
   if (metaTags) parts.push(metaTags.slice(0, 1000))
   parts.push(htmlText)
@@ -266,6 +277,19 @@ function urlBagNameScore(url: string, bagName: string): number {
 // Strips punctuation and extra words for a looser fallback search
 function simplifyBagName(bagName: string): string {
   return bagName.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Defensive sanitization of roaster/bag names before use in searches
+// Handles anything the OCR prompt didn't already clean up
+function sanitizeName(name: string): string {
+  return name
+    .replace(/[™®©]/g, '')               // trademark/copyright symbols
+    .replace(/\s*\(.*?\)\s*/g, ' ')       // parentheticals
+    .replace(/\s*\[.*?\]\s*/g, ' ')       // brackets
+    .replace(/\b(LLC|Co\.|Inc\.|Ltd\.|Corp\.?)\b/gi, '') // legal suffixes
+    .replace(/[^\w\s'-]/g, ' ')           // non-word chars except apostrophe/hyphen
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // Construct a Shopify-style product URL from the bag name slug
@@ -538,7 +562,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { bagName, roasterName } = await req.json()
+    const raw = await req.json()
+    const bagName = sanitizeName(raw.bagName ?? '')
+    const roasterName = sanitizeName(raw.roasterName ?? '')
 
     if (!bagName || !roasterName) {
       return Response.json({ error: 'missing_fields' }, { status: 400, headers: corsHeaders })

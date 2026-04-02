@@ -1,6 +1,6 @@
 # lookup-coffee Function: Key Decisions & Architecture
 
-## Progress to Date 4/1/2026
+## Initial Logic Snapshot
 
 ---
 
@@ -96,7 +96,7 @@
 | Function | Purpose |
 |---|---|
 | `braveSearch(query)` | Calls Brave Search API, returns `[{ url, title }]`, max 5 results |
-| `fetchPageContent(url)` | Fetches HTML; extracts JSON-LD, meta tags, and visible text; for Shopify URLs also fetches `.json` endpoint for image URL in parallel |
+| `fetchPageContent(url)` | Fetches HTML; extracts JSON-LD, meta tags, and visible text; for Shopify URLs also fetches `.json` endpoint in parallel — extracts `imageUrl`, `tags` (array → comma-separated string), and `body_html` (HTML-stripped). These are prepended to the content string in order: Image → Tags → Product description → JSON-LD → meta tags → visible text. Tags are especially reliable as Shopify stores often encode roastLevel, processingMethod, origins, and varietal there. |
 | `extractJsonLd(html)` | Parses all `<script type="application/ld+json">` blocks; decodes HTML entities before parsing |
 | `extractMetaTags(html)` | Extracts `name`/`property` + `content` pairs from `<meta>` tags |
 | `extractText(html)` | Strips scripts/styles/tags, decodes entities, collapses whitespace, truncates to 8000 chars |
@@ -106,6 +106,7 @@
 | `urlBagNameScore(url, bagName)` | Counts how many non-generic bag name words appear in the URL path; filters out: `organic, coffee, blend, roast, roasted, light, medium, dark, espresso, decaf, single` |
 | `isRoasterDomain(url, name)` | Returns true if any word (>2 chars) from roasterName appears in the URL hostname |
 | `simplifyBagName(name)` | Strips punctuation for looser fallback searches |
+| `sanitizeName(name)` | Defensive cleanup applied to both `bagName` and `roasterName` on entry: strips `™`/`®`/`©`, parentheticals, brackets, legal suffixes (LLC, Co., etc.), and stray punctuation. Runs before any phase. Complements the OCR prompt — catches manual input noise and anything the prompt misses. |
 | `shopifyProductUrl(domain, bagName)` | Constructs `/products/{slug}` URL from bag name |
 
 ---
@@ -120,9 +121,12 @@ Instructs Claude to extract all 10 fields from page content. Key hints embedded 
 
 ---
 
-### Known Issues / Open Debugging (as of 4/1/2026)
+### Known Issues / Open Debugging
 
-- **OCR misreads roaster name** — causes Phase 1 search to fail entirely; OCR switched to Haiku for speed
-- **Phase 2 score ≥ 2 threshold** — may be too strict for coffees whose names are short or all-generic (e.g. "Peru Natural"); may miss valid pages
-- **beanbox.com fields often missing** — `roasterLocation`, `origins`, `roastLevel`, `varietal`, `processingMethod` not returning; likely sparse page content or structured data not in expected format
-- **Next test:** Run a popular Stumptown or Blue Bottle coffee to validate Phase 2 works correctly for well-indexed coffees before diagnosing beanbox edge cases
+- **OCR misreads roaster name** — ~~resolved 4/2/2026~~ — two-layer fix applied:
+  1. **OCR prompt** (`ocr-extract`) now explicitly instructs Haiku to return a clean brand name: strip `™`, `®`, `©`, legal suffixes (LLC, Co., Inc.), parentheticals, and trailing punctuation.
+  2. **`sanitizeName()`** in `lookup-coffee` applies the same cleanup defensively on both `bagName` and `roasterName` at the top of the handler, before any phase runs. Catches anything the OCR prompt misses or cases where the user typed a name manually with noise characters. Character-level misread correction (e.g. `"1"` → `"I"`) was intentionally excluded — too risky to apply without context.
+
+- **Phase 2 score ≥ 2 threshold too strict for short/generic bag names** — coffees named things like "Peru Natural" have no identifying words after generic filtering, so all candidates score 0–1 and get rejected. Next step: if all 6 search queries fail to reach score ≥ 2, allow the best-scoring result (score ≥ 1) from query #1 only (the most specific query) as a limited fallback.
+
+- **beanbox.com fields often missing** — `roasterLocation`, `origins`, `roastLevel`, `varietal`, `processingMethod` were not returning. The Shopify `.json` change (4/2/2026) now extracts `tags` and `body_html` which likely covers these fields since beanbox is Shopify-based. Next step: run a beanbox.com coffee through the pipeline to confirm the fix.

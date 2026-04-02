@@ -52,6 +52,13 @@ Return a JSON object with exactly two keys:
 - "bagName": the name of the coffee (e.g. "Ethiopia Yirgacheffe", "Midnight Blend")
 - "roasterName": the name of the roaster or coffee company (e.g. "Blue Bottle Coffee", "Stumptown")
 
+Rules for roasterName:
+- Return the clean brand name only, as it would appear on the roaster's website
+- Strip trademark and copyright symbols (™, ®, ©)
+- Strip legal suffixes (LLC, Co., Inc., Ltd., Corp.)
+- Strip parentheticals and brackets (e.g. "(Est. 1999)", "[Portland, OR]")
+- Strip trailing punctuation
+
 If you cannot clearly read one of these values, set it to null.
 Respond with only the JSON object, no other text.`,
             },
