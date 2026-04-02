@@ -18,6 +18,18 @@ When an explicit product requirement changes, update `docs/BeanScan_Product_Spec
 
 **`docs/lookup-coffee-function-decisions.md`** — update when *implementation mechanics* change: how a helper function works, why a specific threshold or heuristic was chosen, known issues, scoring logic, edge cases, or anything a developer needs to know before editing the function. Answers: *"Why is the code written this way?"* Do NOT duplicate architectural descriptions already in Tech_Architecture.md.
 
+When about to make a decision that affects the logic or decision making of lookup-coffee, first review prior decisions in that document. Follow them unless new information invalidates the reasoning. If no prior decision exists — or you're replacing one — log it using the format below, placed above the `## Current State` section, most recent first. If the decision changes behavior described in `## Current State`, update that section to reflect the new behavior as well.
+
+```
+## YYYY-MM-DD
+### Decision: {what you decided}
+### Context: {why this came up}
+### Alternatives considered: {what else was on the table}
+### Reasoning: {why this option won}
+### Trade-offs accepted: {what you gave up}
+### Supersedes: {Reference to prior decision in this document, if replacing}
+```
+
 ## DIRECTIVES
 
 * Simpler is always better. Do not over-engineer.

@@ -1,6 +1,6 @@
 # lookup-coffee Function: Key Decisions & Architecture
 
-## Initial Logic Snapshot
+## Current State
 
 ---
 
