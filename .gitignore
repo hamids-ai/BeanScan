@@ -43,3 +43,6 @@ supabase/.temp/
 
 # Local development notes
 docs/Development_Status.md
+
+# Eval reports (generated output)
+evals/reports/

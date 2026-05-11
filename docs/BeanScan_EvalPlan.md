@@ -46,12 +46,13 @@ Given `bagName` + `roasterName`, the pipeline runs up to 3 phases and returns 10
 
 ### Lookup Pipeline Metrics
 
-| Metric | Description |
-|---|---|
-| **Field coverage** | % of expected-non-null fields that came back non-null |
-| **Field accuracy** | % of non-null fields that match ground truth |
-| **Phase efficiency** | Which phase completed each lookup (track regressions, e.g., Phase 3 firing for a known well-indexed coffee) |
-| **inferredFields accuracy** | For fields in `inferredFields`, what % match ground truth |
+| Metric | Score | Description |
+|---|---|---|
+| **Recall** | % | Of all fields expected to be non-null, what % did the function return non-null |
+| **Precision** | % | Of all non-null fields the function returned, what % matched ground truth |
+| **F1** | % | Harmonic mean of recall and precision — single number for tracking regressions across runs |
+| **Phase efficiency** | % | Of all test cases, what % resolved in the expected phase. Phase is determined by the `source` field returned by the function (`roaster`, `retail`, `agent`, `partial`) |
+| **inferredFields accuracy** | % | For fields in `inferredFields`, what % match ground truth |
 
 ### Grading per field type
 
@@ -81,9 +82,9 @@ evals/
   fixtures/
     ocr/
       images/          ← bag photos go here
-      ground_truth.json
+      ground_truth.csv
     lookup/
-      test_cases.json
+      test_cases.csv
   reports/             ← generated output, gitignored
 ```
 
@@ -143,29 +144,20 @@ Use `.jpg` unless the photo is a `.png`, in which case keep `.png`.
 
 #### Ground truth file
 
-Create `evals/fixtures/ocr/ground_truth.json`. For each photo, add one entry:
+Create `evals/fixtures/ocr/ground_truth.csv`. Each row is one photo. Columns:
 
-```json
-[
-  {
-    "id": "ocr_001",
-    "imageFile": "ocr_001_stumptown_hair_bender.jpg",
-    "expected": {
-      "bagName": "Hair Bender",
-      "roasterName": "Stumptown Coffee Roasters"
-    },
-    "notes": "Clean printed label, white background — easy case"
-  },
-  {
-    "id": "ocr_002",
-    "imageFile": "ocr_002_blue_bottle_hayes_valley_espresso.jpg",
-    "expected": {
-      "bagName": "Hayes Valley Espresso",
-      "roasterName": "Blue Bottle Coffee"
-    },
-    "notes": "Dark bag, small text"
-  }
-]
+| Column | Description |
+|---|---|
+| `id` | Matches the filename prefix (e.g. `ocr_001`) |
+| `imageFile` | Full filename of the photo |
+| `bagName` | Expected bag name as printed on the bag |
+| `roasterName` | Expected roaster name as printed on the bag |
+| `notes` | Free-form notes about the test case |
+
+```csv
+id,imageFile,bagName,roasterName,notes
+ocr_001,ocr_001_stumptown_hair_bender.jpg,Hair Bender,Stumptown Coffee Roasters,Clean printed label white background — easy case
+ocr_002,ocr_002_blue_bottle_hayes_valley_espresso.jpg,Hayes Valley Espresso,Blue Bottle Coffee,Dark bag small text
 ```
 
 **How to determine the expected values:** Look at the physical bag (not the AI output). Write down what is literally printed on the bag as the product/blend name and the roaster name. Do not include subtitles, taglines, or weight. Strip ™/®/© from expected values — the eval normalizes both sides.
@@ -191,45 +183,27 @@ For coffees you have already tested manually, use those as a starting point — 
 
 #### File
 
-Create `evals/fixtures/lookup/test_cases.json`. Add one object per coffee:
+Create `evals/fixtures/lookup/test_cases.csv`. Each row is one coffee. The file has two groups of columns:
 
-```json
-[
-  {
-    "id": "lookup_001",
-    "input": {
-      "bagName": "Hair Bender",
-      "roasterName": "Stumptown Coffee Roasters"
-    },
-    "expectedPhase": "roaster",
-    "expected": {
-      "roasterLocation": "Portland, OR, USA",
-      "origins": "Ethiopia, Indonesia, Latin America",
-      "roastLevel": "Medium",
-      "varietal": null,
-      "altitude": null,
-      "processingMethod": null,
-      "flavorProfile": "Chocolate, Caramel, Citrus",
-      "bodyCategory": "Medium",
-      "bodyDescription": null,
-      "photoUrl": "present"
-    },
-    "nullable": ["varietal", "altitude", "processingMethod", "bodyDescription"],
-    "notes": "Popular blend — full Phase 1 resolution expected"
-  }
-]
+- **Expected value columns** — named `fieldName_expected` (e.g. `roasterLocation_expected`). The correct ground truth value for that field, or blank if unknown/not applicable.
+- **Nullable flag columns** — bare field names (e.g. `roasterLocation`). Boolean (`true`/`false`). `true` means a null result is acceptable for that field — the eval will not penalize it.
+
+```csv
+id,input_bagName,input_roasterName,expectedPhase,roasterLocation_expected,origins_expected,roastLevel_expected,varietal_expected,altitude_expected,processingMethod_expected,flavorProfile_expected,bodyCategory_expected,bodyDescription_expected,photoUrl_expected,roasterLocation,origins,roastLevel,varietal,altitude,processingMethod,flavorProfile,bodyCategory,bodyDescription,photoUrl,notes
+lookup_001,Hair Bender,Stumptown Coffee Roasters,roaster,"Portland, OR, USA","Ethiopia, Indonesia, Latin America",Medium,,,,"Chocolate, Caramel, Citrus",Medium,,present,false,false,false,true,true,true,false,false,true,false,Popular blend — full Phase 1 resolution expected
 ```
 
-**Field-by-field guidance:**
+**Column-by-column guidance:**
 
-| Field | How to fill it in |
+| Column | How to fill it in |
 |---|---|
-| `input.bagName` | Exact bag name as printed on the bag |
-| `input.roasterName` | Exact roaster name as printed on the bag |
-| `expectedPhase` | Your best estimate: `"roaster"`, `"retail"`, `"agent"`, or `"partial"`. Used to detect phase regressions, not to fail the test |
-| `expected.*` | The correct value for each field. Set to `null` if you genuinely don't know or the field is not applicable to this coffee |
-| `nullable` | List of field names where `null` is an acceptable result — i.e., the field may not exist for this coffee (e.g., varietal is often unlisted for blends). The eval will not penalize a null result for fields listed here |
-| `expected.photoUrl` | Use `"present"` if you expect a photo to be findable. Use `null` if the roaster has no product images online |
+| `id` | Sequential identifier: `lookup_001`, `lookup_002`, etc. |
+| `input_bagName` | Exact bag name as printed on the bag |
+| `input_roasterName` | Exact roaster name as printed on the bag |
+| `expectedPhase` | Your best estimate: `roaster`, `retail`, `agent`, or `partial`. Used to detect phase regressions, not to fail the test |
+| `fieldName_expected` | The correct value for each field. Leave blank if you genuinely don't know or the field is not applicable to this coffee |
+| `photoUrl_expected` | Use `present` if you expect a photo to be findable. Leave blank if the roaster has no product images online |
+| `fieldName` (nullable flag) | `true` if a null result is acceptable for that field (e.g. varietal is often unlisted for blends). `false` if the field should always be present |
 | `notes` | Free-form notes about the coffee or what to watch for |
 
 **How to find the correct expected values:** Go to the roaster's own website and look up the specific product page for that bag. Record what is listed there. If the roaster's site doesn't list a field (e.g., altitude), check one of the Phase 2 retail sites (drinktrade.com, etc.). What you find there is your ground truth.
@@ -304,6 +278,80 @@ A GitHub Actions workflow that runs evals automatically on a trigger (manual but
 ### Recommendation
 
 **Start with Option A (local script).** Get the fixtures built, get the script working, and run it manually before each deploy. Once you've run it a few times and the fixtures are stable, migrate to Option B with a `workflow_dispatch` trigger (manual button in GitHub) — that way you get CI infrastructure without paying for every push. Auto-trigger on push to `main` is the right final state once the app is in active production use.
+
+---
+
+## Report Format
+
+Each eval run produces a Markdown file in `evals/reports/` named with a timestamp (e.g. `2026-05-11_14-32.md`). Timestamped files preserve history so you can compare before/after a pipeline change.
+
+### Sample Report
+
+```
+# BeanScan Eval Report
+Run: 2026-05-11 14:32
+Coffees tested: 5
+
+## Summary
+
+| Metric           | Score                                              |
+|------------------|----------------------------------------------------|
+| Recall           | 87% (39/45 expected fields returned non-null)      |
+| Precision        | 82% (32/39 non-null returned fields matched truth) |
+| F1               | 84%                                                |
+| Phase efficiency | 80% (4/5 resolved in expected phase)               |
+
+---
+
+## Per-Coffee Results
+
+| id         | Coffee                         | Phase expected | Phase actual | Fields passed | Fields failed | Nullable |
+|------------|--------------------------------|----------------|--------------|---------------|---------------|----------|
+| lookup_001 | Hair Bender — Stumptown        | roaster        | roaster      | 8/8           | 0             | 2        |
+| lookup_002 | Hayes Valley — Blue Bottle     | roaster        | roaster      | 6/8           | 2             | 1        |
+| lookup_003 | Seasonal Blend — Small Local   | agent          | agent        | 3/6           | 1             | 3        |
+| lookup_004 | Black Cat — Intelligentsia     | roaster        | retail ⚠️    | 7/8           | 1             | 2        |
+| lookup_005 | Ethiopia Yirgacheffe — Onyx    | retail         | retail       | 8/8           | 0             | 1        |
+
+---
+
+## Failures
+
+### lookup_002 — Hayes Valley Espresso (Blue Bottle Coffee)
+- **origins** — expected: `Ethiopia` / got: `null` ❌ coverage miss
+- **roastLevel** — expected: `Medium-Light` / got: `Medium` ❌ wrong value
+
+### lookup_003 — Seasonal Blend (Small Local Roaster)
+- **roasterLocation** — expected: `Austin, TX, USA` / got: `Dallas, TX, USA` ❌ wrong value
+
+### lookup_004 — Black Cat Classic (Intelligentsia)
+- **phase** — expected: `roaster` / got: `retail` ⚠️ phase regression
+- **altitude** — expected: `1800–2200m` / got: `null` ❌ coverage miss
+
+---
+
+## Field Summary (across all coffees)
+
+| Field             | Pass | Fail | Nullable (skipped) |
+|-------------------|------|------|--------------------|
+| roasterLocation   | 4    | 1    | 0                  |
+| origins           | 3    | 1    | 1                  |
+| roastLevel        | 4    | 1    | 0                  |
+| varietal          | 1    | 0    | 4                  |
+| altitude          | 2    | 1    | 2                  |
+| processingMethod  | 2    | 0    | 3                  |
+| flavorProfile     | 5    | 0    | 0                  |
+| bodyCategory      | 5    | 0    | 0                  |
+| bodyDescription   | 1    | 0    | 4                  |
+| photoUrl          | 4    | 0    | 1                  |
+```
+
+### How to review it
+
+- **Summary** — check F1 first. If it dropped vs. the previous run, something regressed.
+- **Per-coffee results** — scan for phase regressions (⚠️). A well-known coffee falling through to a later phase than expected is a signal worth investigating.
+- **Failures** — each failure shows expected vs. actual. Coverage misses (got null) and wrong values are listed separately.
+- **Field summary** — look for fields with consistent failures across multiple coffees. That points to a pipeline issue, not a one-off.
 
 ---
 
